@@ -3,7 +3,10 @@
 # does not participate in semantic identity.
 #
 # All canonical authored paths are vault-relative: only the path beneath the
-# supplied vault root enters the semantic substrate
+# supplied vault root enters the semantic substrate.
+#
+# vault_name is a logical label only. It does not locate or validate the
+# filesystem directory supplied at build invocation.
 vault_name: kháos
 uuid_field: uuid
 excluded_folders:
