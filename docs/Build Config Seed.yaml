@@ -1,3 +1,4 @@
+vault_name: C:/.../khaos
 uuid_field: uuid
 excluded_folders:
   - VAULT DESIGN
