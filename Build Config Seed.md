@@ -10,6 +10,7 @@ register:
 register_mode: 
 pillar: 
 ---
+
 vault location: C://..../Desktop/khaos
 repo location: F:/.../PROJECT-REPOS
 uuid_field: uuid
