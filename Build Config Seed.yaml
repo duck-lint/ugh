@@ -1,21 +1,6 @@
----
-uuid: 019ffc23-ce02-7774-99fd-1918cdcb5b76
-note_type: 
-aliases: []
-tags: []
-layer: 
-unity_level: 
-vector_direction: 
-register: 
-register_mode: 
-pillar: 
----
 vault location: C://..../Desktop/khaos
-
 repo location: F:/.../PROJECT-REPOS
-
 uuid_field: uuid
-
 excluded_folders:
   - VAULT DESIGN
 semantic_identifier_fields:
