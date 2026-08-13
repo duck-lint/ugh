@@ -1,0 +1,51 @@
+---
+uuid: 019ffc23-ce02-7774-99fd-1918cdcb5b76
+note_type: 
+aliases: []
+tags: []
+layer: 
+unity_level: 
+vector_direction: 
+register: 
+register_mode: 
+pillar: 
+---
+vault location: C://..../Desktop/khaos
+repo location: F:/.../PROJECT-REPOS
+uuid_field: uuid
+excluded_folders:
+  - VAULT DESIGN
+semantic_identifier_fields:
+  - note_type
+  - tags
+  - aliases
+  - journal_entry_date
+  - title
+  - creator
+  - book_read_today
+  - layer
+  - unity_level
+  - vector_direction
+  - register
+  - register_mode
+  - pillar
+  - temporal_pace
+  - hypnagogic_resonance
+  - reactivity
+  - racing_thoughts_while_awake
+  - ran_script_when_racing
+  - dream_motif
+  - dream_motif_valence
+  - dream_location
+  - recall_ability
+  - dream_lucidity
+  - format
+  - publish_studio
+  - original_year_published
+  - origin
+  - entity
+  - entity_type
+  - canonical_name
+  - relationship
+  - first_met
+  - birthday
