@@ -1,4 +1,10 @@
-vault_name: C:/.../khaos
+# The vault root is an environment-specific filesystem path supplied explicitly
+# when a build is invoked. It is not stored in checked-in build configuration and
+# does not participate in semantic identity.
+#
+# All canonical authored paths are vault-relative: only the path beneath the
+# supplied vault root enters the semantic substrate
+vault_name: kháos
 uuid_field: uuid
 excluded_folders:
   - VAULT DESIGN
