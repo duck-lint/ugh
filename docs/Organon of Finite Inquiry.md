@@ -1,18 +1,3 @@
----
-uuid: 019bae04-98f7-7759-888f-8e97ddc043e8
-
-note_type: organon
-
-aliases:
-  - organon
-tags:
-  - architecture
-layer: m
-unity_level:
-  - meta
-register: meta
-pillar: meta
----
 ## Preamble
 ***Nothing here is a cosmic [[Truth]]-claim.***
 Rather: an evergreen, **constitutive-and-critical** organon for disciplined inquiry, [[Understanding]], and action under finitude.
@@ -39,10 +24,6 @@ Rather: an evergreen, **constitutive-and-critical** organon for disciplined inqu
 -- -
 
 ## [[1. Layer-0 — Seed Axioms|Layer-0]] | [[1. Layer-0 — Seed Axioms|Seed Axioms]]
-### Purpose
-Lorem Ipsum Dolor
-### Non-Goals
-Lorem Ipsum Dolor
 ### Seed Axiom F | Finitude / Asymptote
 >A knower is a **[[LAYER-2 INTERFACE/LEXICON/RELATIVE/Time]]-bounded, [[Attention]]-bounded** *[[indexical]] [[process]]* operating under *[[public]] constraints*.
 #### Forbids

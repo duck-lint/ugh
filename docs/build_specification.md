@@ -1,15 +1,3 @@
----
-uuid: 019ff8c8-66f4-7e3e-9250-555c996489a0
-note_type:
-aliases: []
-tags: []
-layer:
-unity_level:
-vector_direction:
-register:
-register_mode:
-pillar:
----
 ## 1. Build configuration
 ### 1.1 Semantic-identifier admission list
 The build configuration contains a mutable list of frontmatter fields that are admitted as semantic identifiers on ingest. 
