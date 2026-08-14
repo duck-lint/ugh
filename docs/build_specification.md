@@ -13,6 +13,8 @@ Each `.md` note is one semantic object. If the Markdown note is renamed/moved wh
 Path represents authored scope hierarchy. Path components express the scope within which the author located a semantic object. Preserve both the complete authored path and its ordered hierarchy. Do not flatten authored scope topology into frontmatter identifiers. If the Markdown note is renamed/moved while retaining its UUID, it must remain the same semantic object while its meaningful path context changes.
 ### 2.3 Preserve three states for admitted frontmatter fields
 For an admitted field, absence, authored blank, and authored value are different semantic states. `PresentBlank` is the semantic state. A programming language may internally use `null` or `None`, but that spelling is not the authored meaning.
+### 2.4 Excluded folders
+Each excluded_folders entry is an exact vault-relative directory path; that directory and its descendants are excluded, while directories with the same leaf name at other vault-relative paths remain included.
 ## 3. Build regions
 ### 3.1 Headings create nested semantic regions
 Markdown headings from `#` through `######` form nested semantic regions. A region is a path-addressable semantic scope boundary that organizes semantic units. Addressing a region provides access to the units inhabiting that scope; the region itself is not a semantic unit. Parse heading level and order into a nested region tree. Do not emit a semantic unit merely because a heading exists.

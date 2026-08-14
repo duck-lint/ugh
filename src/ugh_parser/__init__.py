@@ -13,6 +13,7 @@ from .parser import (
     load_build_config,
     parse_note,
 )
+from .vault import CorpusFailure, VaultParseResult, discover_markdown_notes, parse_vault
 
 __all__ = [
     "FrontmatterField",
@@ -26,4 +27,8 @@ __all__ = [
     "Wikilink",
     "load_build_config",
     "parse_note",
+    "CorpusFailure",
+    "VaultParseResult",
+    "discover_markdown_notes",
+    "parse_vault",
 ]

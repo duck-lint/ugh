@@ -9,6 +9,7 @@ from markdown_it import MarkdownIt
 from mdit_py_plugins.gfm import gfm_plugin
 from ruamel.yaml import YAML
 from ruamel.yaml.constructor import DuplicateKeyError
+from ruamel.yaml.error import YAMLError
 
 
 class NoteParseError(ValueError):
@@ -27,6 +28,24 @@ class BuildConfig:
     def __post_init__(self) -> None:
         if self.uuid_field in self.semantic_identifier_fields:
             raise NoteParseError("uuid_field cannot also be a semantic identifier field")
+        for excluded_folder in self.excluded_folders:
+            _validate_excluded_folder(excluded_folder)
+
+
+def _validate_excluded_folder(value: str) -> None:
+    """Require an exact, normalized vault-relative directory path."""
+
+    if not isinstance(value, str) or not value.strip():
+        raise NoteParseError(f"excluded_folders entry is not a vault-relative directory path: {value!r}")
+    normalized = value.replace("\\", "/")
+    raw_parts = tuple(normalized.split("/"))
+    path = PurePosixPath(normalized)
+    if (
+        path.is_absolute()
+        or ".." in raw_parts
+        or (path.parts and ":" in path.parts[0])
+    ):
+        raise NoteParseError(f"excluded_folders entry is not a vault-relative directory path: {value!r}")
 
 
 def load_build_config(path: str | Path) -> BuildConfig:
@@ -98,7 +117,7 @@ class FrontmatterField:
 
 @dataclass(frozen=True)
 class SemanticObject:
-    uuid: str
+    uuid: str | None
     authored_path: str
     path_hierarchy: tuple[str, ...]
     frontmatter: dict[str, Any]
@@ -118,7 +137,7 @@ class HeadingRegion:
 @dataclass(frozen=True)
 class SemanticUnit:
     local_order: int
-    source_object_uuid: str
+    source_object_uuid: str | None
     authored_path: str
     path_hierarchy: tuple[str, ...]
     region_path: tuple[str, ...]
@@ -285,7 +304,13 @@ def _parsed_text_and_links(parser: MarkdownIt, raw: str, *, callout: bool = Fals
     return parsed_text, tuple(links), tuple(embeds)
 
 
-def parse_note(path: str | Path, *, vault_root: str | Path, build_config: BuildConfig) -> ParsedNote:
+def parse_note(
+    path: str | Path,
+    *,
+    vault_root: str | Path,
+    build_config: BuildConfig,
+    require_uuid: bool = True,
+) -> ParsedNote:
     """Parse exactly one Markdown note using the supplied build admission list."""
 
     source_path = Path(path)
@@ -293,7 +318,9 @@ def parse_note(path: str | Path, *, vault_root: str | Path, build_config: BuildC
     frontmatter, body_start = _frontmatter(source)
     uuid = frontmatter.get(build_config.uuid_field)
     if not isinstance(uuid, str) or not uuid.strip():
-        raise NoteParseError("frontmatter must contain one non-empty uuid")
+        if require_uuid:
+            raise NoteParseError(f"frontmatter must contain one non-empty {build_config.uuid_field}")
+        uuid = None
     try:
         authored_path = source_path.relative_to(Path(vault_root)).as_posix()
     except ValueError as exc:
