@@ -100,10 +100,11 @@ WIKILINK RESOLUTION
 ```
 ## 7. Canonical semantic-unit record
 ### 7.1 The canonical unit owns its semantics
-The semantic unit is the canonical thing. Retrieval surfaces own representations of, and pointers back to, that unit. Retrieval indexes are not additional authoritative copies of the unit's semantic state. Store rich semantic context on the canonical unit. Store only the fields each retrieval surface needs to retrieve a `unit_id`, unless a later explicit decision requires duplication. A canonical unit must be able to retain:
+The semantic unit is the canonical thing. Retrieval surfaces own representations of, and pointers back to, that unit. Retrieval indexes are not additional authoritative copies of the unit's semantic state. Store rich semantic context on the canonical unit. Store only the fields each retrieval surface needs to retrieve a `unit_id`, unless a later explicit decision requires duplication. A canonical unit also retains structured authored embeds already parsed from that unit; persistence must preserve them without resolving or interpreting their targets unless a later explicit rule authorizes that behavior. A canonical unit must be able to retain:
 ```text
 unit_id
 source_object_uuid
+CanonicalUnit
 source path
 complete semantic path hierarchy
 complete region path
