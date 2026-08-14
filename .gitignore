@@ -5,3 +5,5 @@ build/
 dist/
 output/
 .runtime_deps/
+*.egg*
+*pytest*

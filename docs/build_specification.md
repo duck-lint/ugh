@@ -1,15 +1,3 @@
----
-uuid: 019ff8c8-66f4-7e3e-9250-555c996489a0
-note_type:
-aliases: []
-tags: []
-layer:
-unity_level:
-vector_direction:
-register:
-register_mode:
-pillar:
----
 ## 1. Build configuration
 ### 1.1 Semantic-identifier admission list
 The build configuration contains a mutable list of frontmatter fields that are admitted as semantic identifiers on ingest. 
@@ -25,9 +13,11 @@ Each `.md` note is one semantic object. If the Markdown note is renamed/moved wh
 Path represents authored scope hierarchy. Path components express the scope within which the author located a semantic object. Preserve both the complete authored path and its ordered hierarchy. Do not flatten authored scope topology into frontmatter identifiers. If the Markdown note is renamed/moved while retaining its UUID, it must remain the same semantic object while its meaningful path context changes.
 ### 2.3 Preserve three states for admitted frontmatter fields
 For an admitted field, absence, authored blank, and authored value are different semantic states. `PresentBlank` is the semantic state. A programming language may internally use `null` or `None`, but that spelling is not the authored meaning.
+### 2.4 Excluded folders
+Each excluded_folders entry is an exact vault-relative directory path; that directory and its descendants are excluded, while directories with the same leaf name at other vault-relative paths remain included.
 ## 3. Build regions
 ### 3.1 Headings create nested semantic regions
-Markdown headings from `#` through `######` form nested semantic regions. A region is a path-addressable semantic scope boundary that organizes semantic units. Addressing a region provides access to the units inhabiting that scope; the region itself is not a semantic unit. Parse heading level and order into a nested region tree. Do not emit a semantic unit merely because a heading exists.
+Markdown headings from `#` through `######` form nested semantic regions. A region is a path-addressable semantic scope boundary that organizes semantic units. Addressing a region provides access to the units inhabiting that scope; the region itself is not a semantic unit. Region resolution first attempts exact canonical heading-address equality. If no exact match exists, compare the authored region fragment and canonical heading-address text using a normalized address key that applies Unicode case-folding, treats runs of non-letter/non-number characters as separators, collapses separator runs to one space, and trims leading/trailing space. Canonical authored heading text and heading-address text remain unchanged. Normalization is comparison-only and does not authorize substring, prefix, fuzzy, stemming, synonym, or semantic matching.
 ### 3.2 Units inherit the complete region path
 A unit under nested headings inherits the complete region path, not only its immediate heading—store or resolve the ordered chain of scoped regions from the highest level heading to the most immediate region.
 ## 4. Build semantic units and chunk boundaries
@@ -75,6 +65,20 @@ path: `C:\Users\madis\Desktop\kháos\LAYER-1 PILLARS\PILLAR 2-DYNAMIC COHERENCE\
 ## 5. Inherit object context into every unit
 ### 5.1 Inherit the path and admitted semantic identifiers
 Every unit inherits its object's meaningful path and all frontmatter fields admitted by the current build configuration as semantic identifiers. This makes the unit traceable and lets the object's semantic context participate in retrieval through appropriate surfaces.
+### REGION ADDRESS NORMALIZATION
+Region resolution occurs only within the already-resolved target object. First attempt exact authored heading-text equality. If no exact heading matches, compare the authored region fragment and candidate heading text using a punctuation-insensitive address key:
+- preserve authored canonical heading text unchanged;
+- treat runs of non-letter/non-number characters as separators;
+- collapse separator runs to one space;
+- trim leading/trailing space;
+- do not otherwise alter words.
+Resolution remains equality on that normalized address key.
+```text
+exactly 1 normalized match → resolve to that canonical region
+0 matches                  → unresolved
+>1 matches                 → ambiguous, list contextual candidate regions
+```
+This normalization is only for region addressing. It does not rewrite canonical heading text and does not authorize substring, prefix, fuzzy, stemming, synonym, or wording-based matching.
 ## 6. Parse and resolve wikilinks
 ### 6.1 A wikilink is structured topology, not only text
 The Markdown brackets are authored syntax. The parser must preserve the authored form, visible text, and addressed target as distinct information. Each output must retain the correct target address and visible text without losing the raw Markdown.
@@ -83,9 +87,9 @@ When an admitted frontmatter field contains a wikilink, every unit in that objec
 ### 6.3 Body wikilinks create `linked_to`
 A body wikilink has no additional authored relation type. It creates a generic `linked_to` relation. Build runtime will not infer anything.
 ### 6.4 Preserve distinct reasons for the same connection
-A frontmatter-derived relation and a body-derived relation remain distinct facts even when they share the same source unit and target object—differentiated by either inheriting the relation from frontmatter, or being `linked_to` if from body.
+A frontmatter-derived relation and a body-derived relation remain distinct facts even when they share the same source unit and target object—differentiated by either inheriting the relation from frontmatter, or being `linked_to` if from body. A semantic region preserves its raw authored heading Markdown, parsed linguistic heading text, and canonical heading-address text separately. Region resolution first attempts exact canonical heading-address equality. If no exact match exists, compare the authored region fragment and canonical heading-address text using a normalized address key that applies Unicode case-folding, treats runs of non-letter/non-number characters as separators, collapses separator runs to one space, and trims leading/trailing space. Canonical authored heading text and heading-address text remain unchanged. Normalization is comparison-only and does not authorize substring, prefix, fuzzy, stemming, synonym, or semantic matching.
 ### 6.5 Authored wikilinks outside of escape characters must resolve
-Every authored wikilink—not prefaced with an escape character (\) or inside of `codeblocks`—must resolve to the semantic target it addresses. An object link requires the object. An object-plus-region link requires both the object and region. Ingest hard fails otherwise—with vault-wide manifest of what target object is missing and where the source for the link is.
+Every authored wikilink—not prefaced with an escape character (\) or inside of `codeblocks`—must resolve to the semantic target it addresses. An object link requires the object. An object-plus-region link requires both the object and region. Ingest hard fails otherwise—with vault-wide manifest of what target object is missing and where the source for the link is. Object-name and alias address comparison is case-insensitive using Unicode case-folding. Canonical authored names, aliases, paths, and link text remain unchanged. Case normalization is comparison-only and does not create fuzzy, substring, lexical, or semantic matching.
 ```text
 WIKILINK RESOLUTION
 
