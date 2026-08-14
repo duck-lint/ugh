@@ -24,7 +24,47 @@ class SingleNoteParserTests(unittest.TestCase):
         self.assertEqual(parsed.units[-1].region_path, ("region-0004",))
         self.assertTrue(all(unit.source_object_uuid == parsed.semantic_object.uuid for unit in parsed.units))
         self.assertEqual([region.heading for region in parsed.regions], ["Dream Recall:", "Yesterday Review:", "Daily Intent:", "Freeform Journaling:"])
+        self.assertEqual([region.parsed_text for region in parsed.regions], [region.address_text for region in parsed.regions])
         self.assertEqual(parsed.semantic_object.path_hierarchy, ())
+
+    def test_heading_preserves_raw_rendered_and_address_text(self):
+        source = """---
+uuid: heading-forms
+---
+### [[3. Layer-2 — Interface|Interface]] Components
+#### A) Cash-out & [[Inferential Bridge (Rule)|Inferential Bridge]] Enforcement
+#### B) Isomorphic Mappings ([[Form]], without hallucinating [[Content]])
+#### E) [[3. Layer-2 — Interface|Ethics]] as [[3. Layer-2 — Interface|Interface]] Constraints ([[Epistemic Golden Rule]] / Post-Perennialism)
+"""
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "heading-forms.md"
+            path.write_text(source, encoding="utf-8")
+            parsed = parse_note(path, vault_root=directory, build_config=BuildConfig("test", "uuid", (), ()))
+        self.assertEqual(
+            [(region.raw_markdown, region.parsed_text, region.address_text) for region in parsed.regions],
+            [
+                (
+                    "### [[3. Layer-2 — Interface|Interface]] Components\n",
+                    "Interface Components",
+                    "3. Layer-2 — Interface Interface Components",
+                ),
+                (
+                    "#### A) Cash-out & [[Inferential Bridge (Rule)|Inferential Bridge]] Enforcement\n",
+                    "A) Cash-out & Inferential Bridge Enforcement",
+                    "A) Cash-out & Inferential Bridge (Rule) Inferential Bridge Enforcement",
+                ),
+                (
+                    "#### B) Isomorphic Mappings ([[Form]], without hallucinating [[Content]])\n",
+                    "B) Isomorphic Mappings (Form, without hallucinating Content)",
+                    "B) Isomorphic Mappings (Form, without hallucinating Content)",
+                ),
+                (
+                    "#### E) [[3. Layer-2 — Interface|Ethics]] as [[3. Layer-2 — Interface|Interface]] Constraints ([[Epistemic Golden Rule]] / Post-Perennialism)\n",
+                    "E) Ethics as Interface Constraints (Epistemic Golden Rule / Post-Perennialism)",
+                    "E) 3. Layer-2 — Interface Ethics as 3. Layer-2 — Interface Interface Constraints (Epistemic Golden Rule / Post-Perennialism)",
+                ),
+            ],
+        )
 
     def test_raw_markdown_and_visible_parsed_text_are_distinct(self):
         parsed = parse_note(ROOT / "docs/07_Tuesday.md", vault_root=ROOT / "docs", build_config=CONFIG)

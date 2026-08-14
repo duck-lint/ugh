@@ -26,6 +26,7 @@ class RegionTarget:
     object_uuid: str
     heading: str
     region_path: tuple[str, ...]
+    address_text: str
 
 
 @dataclass(frozen=True)
@@ -99,7 +100,7 @@ def _aliases(value: object, path: str) -> tuple[str, ...]:
 
 
 def _region_target(object_uuid: str, region: HeadingRegion) -> RegionTarget:
-    return RegionTarget(object_uuid, region.heading, region.region_path + (region.region_id,))
+    return RegionTarget(object_uuid, region.heading, region.region_path + (region.region_id,), region.address_text)
 
 
 def _build_index(corpus: MaterializedCorpus) -> _ResolutionIndex:
@@ -153,7 +154,7 @@ def _region_address_key(value: str) -> str:
             current = []
     if current:
         parts.append("".join(current))
-    return " ".join(parts)
+    return " ".join(parts).casefold()
 
 
 def resolve_relations(corpus: MaterializedCorpus) -> ResolutionResult:
@@ -199,14 +200,14 @@ def resolve_relations(corpus: MaterializedCorpus) -> ResolutionResult:
                 region_matches = tuple(
                     region
                     for region in index.regions_by_uuid[object_target.object_uuid]
-                    if region.heading == relation.target_region_fragment
+                    if region.address_text == relation.target_region_fragment
                 )
                 if not region_matches:
                     normalized_fragment = _region_address_key(relation.target_region_fragment)
                     region_matches = tuple(
                         region
                         for region in index.regions_by_uuid[object_target.object_uuid]
-                        if _region_address_key(region.heading) == normalized_fragment
+                        if _region_address_key(region.address_text) == normalized_fragment
                     )
                 if not region_matches:
                     failures.append(

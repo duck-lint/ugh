@@ -56,6 +56,17 @@ no link here
             materialized = materialize_context(parse_vault(root, config))
         self.assertEqual([(r.relation_name, r.target) for r in materialized.units[0].relations], [("admitted", "admitted")])
 
+    def test_heading_wikilinks_are_region_structure_not_body_relations(self):
+        config = BuildConfig("test", "uuid", (), ())
+        source = "---\nuuid: object\n---\n# [[Target|Visible]]\nbody text\n"
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._write(root, "note.md", source)
+            materialized = materialize_context(parse_vault(root, config))
+        self.assertEqual(materialized.units[0].relations, ())
+        self.assertEqual(materialized.parsed_corpus.notes[0].regions[0].parsed_text, "Visible")
+        self.assertEqual(materialized.parsed_corpus.notes[0].regions[0].address_text, "Target Visible")
+
     def test_list_valued_frontmatter_and_embeds_remain_structured(self):
         config = BuildConfig("test", "uuid", (), ("book_read_today",))
         source = "---\nuuid: object\nbook_read_today:\n  - \"[[Book#Chapter|book label]]\"\n---\n![[assets/image.png]]\n"

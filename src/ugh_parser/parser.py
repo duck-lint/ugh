@@ -132,6 +132,8 @@ class HeadingRegion:
     raw_markdown: str
     region_path: tuple[str, ...]
     parent_region_id: str | None
+    parsed_text: str
+    address_text: str
 
 
 @dataclass(frozen=True)
@@ -304,6 +306,35 @@ def _parsed_text_and_links(parser: MarkdownIt, raw: str, *, callout: bool = Fals
     return parsed_text, tuple(links), tuple(embeds)
 
 
+def _heading_texts(parser: MarkdownIt, raw: str) -> tuple[str, str]:
+    """Extract rendered and addressed text from a parsed heading structure."""
+
+    tokens = parser.parse(raw)
+    parsed_parts: list[str] = []
+    address_parts: list[str] = []
+    for token in tokens:
+        if token.type != "inline" or not token.children:
+            continue
+        parsed_inline: list[str] = []
+        address_inline: list[str] = []
+        for child in token.children:
+            if child.type == "wikilink":
+                attrs = child.attrs or {}
+                parsed_inline.append(child.content)
+                address_inline.append(attrs["target"])
+                if child.content != attrs["target"]:
+                    address_inline.append(" " + child.content)
+            elif child.type in {"text", "code_inline", "softbreak", "hardbreak"}:
+                value = child.content if child.type != "softbreak" else "\n"
+                parsed_inline.append(value)
+                address_inline.append(value)
+        if parsed_inline:
+            parsed_parts.append("".join(parsed_inline))
+        if address_inline:
+            address_parts.append("".join(address_inline))
+    return "\n".join(parsed_parts), "\n".join(address_parts)
+
+
 def parse_note(
     path: str | Path,
     *,
@@ -350,9 +381,18 @@ def parse_note(
         if token.type == "heading_open":
             level = int(token.tag[1:])
             inline = next(t for t in tokens[tokens.index(token) + 1 :] if t.type == "inline")
-            heading, _, _ = _parsed_text_and_links(parser, inline.content)
+            parsed_text, address_text = _heading_texts(parser, raw)
             active[:] = [region for region in active if region.level < level]
-            region = HeadingRegion(f"region-{len(regions) + 1:04d}", level, heading, raw, tuple(r.region_id for r in active), active[-1].region_id if active else None)
+            region = HeadingRegion(
+                f"region-{len(regions) + 1:04d}",
+                level,
+                parsed_text,
+                raw,
+                tuple(r.region_id for r in active),
+                active[-1].region_id if active else None,
+                parsed_text,
+                address_text,
+            )
             regions.append(region)
             active.append(region)
         else:

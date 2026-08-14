@@ -134,6 +134,20 @@ class ResolutionTests(unittest.TestCase):
         finally:
             directory.cleanup()
 
+    def test_region_resolves_against_authored_address_text_not_rendered_alias(self):
+        directory, corpus = self._resolve({
+            "source.md": self._note("source", "[[one#Target Visible]]"),
+            "one.md": self._note("one", "# [[Target|Visible]]\ntext"),
+        })
+        try:
+            result = resolve_relations(corpus)
+            self.assertTrue(result.is_valid)
+            target = result.resolved_relations[0].target_region
+            self.assertEqual(target.heading, "Visible")
+            self.assertEqual(target.address_text, "Target Visible")
+        finally:
+            directory.cleanup()
+
     def test_region_punctuation_fallback_resolves_authored_forms(self):
         directory, corpus = self._resolve({
             "source.md": self._note("source", "[[one#Anti-reification Principle]] [[one#Pillar A Semantic Geometry]] [[one#Pillar B Dynamic Coherence]]"),
@@ -145,6 +159,22 @@ class ResolutionTests(unittest.TestCase):
             self.assertEqual([r.target_region.heading for r in result.resolved_relations], [
                 "Anti-reification Principle:", "Pillar A | Semantic Geometry", "Pillar B: Dynamic Coherence"
             ])
+        finally:
+            directory.cleanup()
+
+    def test_region_address_fallback_is_punctuation_insensitive_and_casefolded(self):
+        directory, corpus = self._resolve({
+            "source.md": self._note("source", "[[one#Foo Bar]] [[one#foo-bar]]"),
+            "one.md": self._note("one", "# Foo-Bar\ntext"),
+        })
+        try:
+            result = resolve_relations(corpus)
+            self.assertTrue(result.is_valid)
+            self.assertEqual(len(result.resolved_relations), 2)
+            self.assertEqual(
+                [relation.authored_region_fragment for relation in result.resolved_relations],
+                ["Foo Bar", "foo-bar"],
+            )
         finally:
             directory.cleanup()
 
