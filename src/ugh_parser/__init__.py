@@ -16,6 +16,7 @@ from .parser import (
 from .vault import CorpusFailure, VaultParseResult, discover_markdown_notes, parse_vault
 from .materialize import MaterializedCorpus, MaterializedUnit, MaterializationError, RelationCandidate, materialize_context
 from .resolve import ResolutionError, ResolutionFailure, ResolutionResult, ResolvedRelation, ObjectTarget, RegionTarget, resolve_relations
+from .canonical import CanonicalObject, CanonicalRegion, CanonicalRegionReference, CanonicalRelation, CanonicalUnit, CanonicalizationError, CompletedIngest, canonicalize_ingest
 
 __all__ = [
     "FrontmatterField",
@@ -45,4 +46,12 @@ __all__ = [
     "ObjectTarget",
     "RegionTarget",
     "resolve_relations",
+    "CanonicalObject",
+    "CanonicalRegion",
+    "CanonicalRegionReference",
+    "CanonicalRelation",
+    "CanonicalUnit",
+    "CanonicalizationError",
+    "CompletedIngest",
+    "canonicalize_ingest",
 ]
