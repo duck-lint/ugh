@@ -89,7 +89,7 @@ A body wikilink has no additional authored relation type. It creates a generic `
 ### 6.4 Preserve distinct reasons for the same connection
 A frontmatter-derived relation and a body-derived relation remain distinct facts even when they share the same source unit and target object—differentiated by either inheriting the relation from frontmatter, or being `linked_to` if from body.
 ### 6.5 Authored wikilinks outside of escape characters must resolve
-Every authored wikilink—not prefaced with an escape character (\) or inside of `codeblocks`—must resolve to the semantic target it addresses. An object link requires the object. An object-plus-region link requires both the object and region. Ingest hard fails otherwise—with vault-wide manifest of what target object is missing and where the source for the link is.
+Every authored wikilink—not prefaced with an escape character (\) or inside of `codeblocks`—must resolve to the semantic target it addresses. An object link requires the object. An object-plus-region link requires both the object and region. Ingest hard fails otherwise—with vault-wide manifest of what target object is missing and where the source for the link is. Object-name and alias address comparison is case-insensitive using Unicode case-folding. Canonical authored names, aliases, paths, and link text remain unchanged. Case normalization is comparison-only and does not create fuzzy, substring, lexical, or semantic matching.
 ```text
 WIKILINK RESOLUTION
 

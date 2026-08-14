@@ -82,6 +82,12 @@ def _object_name(path: str) -> str:
     return _without_final_md(PurePosixPath(path).name)
 
 
+def _object_address_key(value: str) -> str:
+    """Normalize only name/alias comparison by the specified Unicode case-fold."""
+
+    return value.casefold()
+
+
 def _aliases(value: object, path: str) -> tuple[str, ...]:
     if value is None:
         return ()
@@ -114,10 +120,10 @@ def _build_index(corpus: MaterializedCorpus) -> _ResolutionIndex:
         if target.address in by_address:
             raise ResolutionError(f"duplicate authored note address: {target.address}")
         by_address[target.address] = target
-        by_name[target.name].append(target)
+        by_name[_object_address_key(target.name)].append(target)
         aliases_value = semantic_object.frontmatter.get("aliases") if "aliases" in parsed.build_config.semantic_identifier_fields else None
         for alias in _aliases(aliases_value, semantic_object.authored_path):
-            by_name[alias].append(target)
+            by_name[_object_address_key(alias)].append(target)
         regions_by_uuid[target.object_uuid] = tuple(_region_target(target.object_uuid, region) for region in note.regions)
 
     deduplicated: dict[str, tuple[ObjectTarget, ...]] = {}
@@ -131,7 +137,7 @@ def _object_matches(target: str, index: _ResolutionIndex) -> tuple[ObjectTarget,
     if "/" in target:
         exact = index.by_address.get(target)
         return (exact,) if exact is not None else ()
-    return index.by_name_or_alias.get(target, ())
+    return index.by_name_or_alias.get(_object_address_key(target), ())
 
 
 def _region_address_key(value: str) -> str:

@@ -72,6 +72,40 @@ class ResolutionTests(unittest.TestCase):
         finally:
             directory.cleanup()
 
+    def test_name_and_alias_addresses_casefold_without_rewriting_authored_values(self):
+        directory, corpus = self._resolve({
+            "source.md": self._note("source", "[[mission]] [[public]] [[STRASSE]]"),
+            "Mission.md": self._note("mission", "mission"),
+            "Public.md": self._note("public", "public"),
+            "german.md": self._note("german", "german", "aliases:\n  - Straße\n"),
+        })
+        try:
+            result = resolve_relations(corpus)
+            self.assertTrue(result.is_valid)
+            self.assertEqual([r.target_object_uuid for r in result.resolved_relations], ["mission", "public", "german"])
+            self.assertEqual([r.authored_target for r in result.resolved_relations], ["mission", "public", "STRASSE"])
+            self.assertEqual([r.raw for r in result.resolved_relations], ["[[mission]]", "[[public]]", "[[STRASSE]]"])
+            notes = result.materialized_corpus.parsed_corpus.notes
+            mission = next(note for note in notes if note.semantic_object.uuid == "mission")
+            german = next(note for note in notes if note.semantic_object.uuid == "german")
+            self.assertEqual(mission.semantic_object.authored_path, "Mission.md")
+            self.assertEqual(german.semantic_object.frontmatter["aliases"], ["Straße"])
+        finally:
+            directory.cleanup()
+
+    def test_casefold_collision_is_ambiguous_and_retains_all_candidates(self):
+        directory, corpus = self._resolve({
+            "source.md": self._note("source", "[[THING]]"),
+            "Thing.md": self._note("one", "one"),
+            "two.md": self._note("two", "two", "aliases:\n  - thing\n"),
+        })
+        try:
+            result = resolve_relations(corpus)
+            self.assertEqual([failure.kind for failure in result.failures], ["ambiguous_object"])
+            self.assertEqual([candidate.object_uuid for candidate in result.failures[0].object_candidates], ["one", "two"])
+        finally:
+            directory.cleanup()
+
     def test_ambiguous_name_and_alias_report_all_candidates(self):
         directory, corpus = self._resolve({
             "source.md": self._note("source", "[[Thing]] [[common]]"),
