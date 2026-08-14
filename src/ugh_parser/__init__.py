@@ -14,6 +14,7 @@ from .parser import (
     parse_note,
 )
 from .vault import CorpusFailure, VaultParseResult, discover_markdown_notes, parse_vault
+from .materialize import MaterializedCorpus, MaterializedUnit, MaterializationError, RelationCandidate, materialize_context
 
 __all__ = [
     "FrontmatterField",
@@ -31,4 +32,9 @@ __all__ = [
     "VaultParseResult",
     "discover_markdown_notes",
     "parse_vault",
+    "MaterializedCorpus",
+    "MaterializedUnit",
+    "MaterializationError",
+    "RelationCandidate",
+    "materialize_context",
 ]

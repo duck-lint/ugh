@@ -25,6 +25,7 @@ class VaultParseResult:
 
     notes: tuple[ParsedNote, ...]
     failures: tuple[CorpusFailure, ...]
+    build_config: BuildConfig
 
     @property
     def is_valid(self) -> bool:
@@ -102,4 +103,4 @@ def parse_vault(vault_root: str | Path, build_config: BuildConfig) -> VaultParse
                 )
             )
 
-    return VaultParseResult(tuple(notes), tuple(failures))
+    return VaultParseResult(tuple(notes), tuple(failures), build_config)
