@@ -65,20 +65,6 @@ path: `C:\Users\madis\Desktop\kháos\LAYER-1 PILLARS\PILLAR 2-DYNAMIC COHERENCE\
 ## 5. Inherit object context into every unit
 ### 5.1 Inherit the path and admitted semantic identifiers
 Every unit inherits its object's meaningful path and all frontmatter fields admitted by the current build configuration as semantic identifiers. This makes the unit traceable and lets the object's semantic context participate in retrieval through appropriate surfaces. The fallback key is punctuation-insensitive and Unicode-case-folded.
-### REGION ADDRESS NORMALIZATION
-Region resolution occurs only within the already-resolved target object. First attempt exact authored heading-text equality. If no exact heading matches, compare the authored region fragment and candidate heading text using a punctuation-insensitive address key:
-- preserve authored canonical heading text unchanged;
-- treat runs of non-letter/non-number characters as separators;
-- collapse separator runs to one space;
-- trim leading/trailing space;
-- do not otherwise alter words.
-Resolution remains equality on that normalized address key.
-```text
-exactly 1 normalized match → resolve to that canonical region
-0 matches                  → unresolved
->1 matches                 → ambiguous, list contextual candidate regions
-```
-This normalization is only for region addressing. It does not rewrite canonical heading text and does not authorize substring, prefix, fuzzy, stemming, synonym, or wording-based matching.
 ## 6. Parse and resolve wikilinks
 ### 6.1 A wikilink is structured topology, not only text
 The Markdown brackets are authored syntax. The parser must preserve the authored form, visible text, and addressed target as distinct information. Each output must retain the correct target address and visible text without losing the raw Markdown.
