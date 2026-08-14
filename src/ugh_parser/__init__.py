@@ -15,6 +15,7 @@ from .parser import (
 )
 from .vault import CorpusFailure, VaultParseResult, discover_markdown_notes, parse_vault
 from .materialize import MaterializedCorpus, MaterializedUnit, MaterializationError, RelationCandidate, materialize_context
+from .resolve import ResolutionError, ResolutionFailure, ResolutionResult, ResolvedRelation, ObjectTarget, RegionTarget, resolve_relations
 
 __all__ = [
     "FrontmatterField",
@@ -37,4 +38,11 @@ __all__ = [
     "MaterializationError",
     "RelationCandidate",
     "materialize_context",
+    "ResolutionError",
+    "ResolutionFailure",
+    "ResolutionResult",
+    "ResolvedRelation",
+    "ObjectTarget",
+    "RegionTarget",
+    "resolve_relations",
 ]
