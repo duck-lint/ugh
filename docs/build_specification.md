@@ -64,7 +64,7 @@ path: `C:\Users\madis\Desktop\kháos\LAYER-1 PILLARS\PILLAR 2-DYNAMIC COHERENCE\
 	- semantic **regions** are not **chunks**, semantic **units** are
 ## 5. Inherit object context into every unit
 ### 5.1 Inherit the path and admitted semantic identifiers
-Every unit inherits its object's meaningful path and all frontmatter fields admitted by the current build configuration as semantic identifiers. This makes the unit traceable and lets the object's semantic context participate in retrieval through appropriate surfaces.
+Every unit inherits its object's meaningful path and all frontmatter fields admitted by the current build configuration as semantic identifiers. This makes the unit traceable and lets the object's semantic context participate in retrieval through appropriate surfaces. The fallback key is punctuation-insensitive and Unicode-case-folded.
 ### REGION ADDRESS NORMALIZATION
 Region resolution occurs only within the already-resolved target object. First attempt exact authored heading-text equality. If no exact heading matches, compare the authored region fragment and candidate heading text using a punctuation-insensitive address key:
 - preserve authored canonical heading text unchanged;
