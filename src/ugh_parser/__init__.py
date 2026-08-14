@@ -17,6 +17,7 @@ from .vault import CorpusFailure, VaultParseResult, discover_markdown_notes, par
 from .materialize import MaterializedCorpus, MaterializedUnit, MaterializationError, RelationCandidate, materialize_context
 from .resolve import ResolutionError, ResolutionFailure, ResolutionResult, ResolvedRelation, ObjectTarget, RegionTarget, resolve_relations
 from .canonical import CanonicalObject, CanonicalRegion, CanonicalRegionReference, CanonicalRelation, CanonicalUnit, CanonicalizationError, CompletedIngest, canonicalize_ingest
+from .substrate import SubstrateError, foreign_key_check, hydrate_unit, write_completed_ingest
 
 __all__ = [
     "FrontmatterField",
@@ -54,4 +55,8 @@ __all__ = [
     "CanonicalizationError",
     "CompletedIngest",
     "canonicalize_ingest",
+    "SubstrateError",
+    "write_completed_ingest",
+    "hydrate_unit",
+    "foreign_key_check",
 ]
