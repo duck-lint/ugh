@@ -1,9 +1,3 @@
-"""Parse one Markdown note into the stage-one canonical structures.
-
-This module deliberately stops at parsing.  It does not resolve wikilinks,
-persist records, build retrieval representations, or perform embedding.
-"""
-
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -12,6 +6,7 @@ import re
 from typing import Any, Iterable
 
 from markdown_it import MarkdownIt
+from mdit_py_plugins.gfm import gfm_plugin
 from ruamel.yaml import YAML
 from ruamel.yaml.constructor import DuplicateKeyError
 
@@ -21,12 +16,75 @@ class NoteParseError(ValueError):
 
 
 @dataclass(frozen=True)
+class BuildConfig:
+    """Parser-affecting build configuration loaded from the build seed."""
+
+    vault_name: str
+    uuid_field: str
+    excluded_folders: tuple[str, ...]
+    semantic_identifier_fields: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        if self.uuid_field in self.semantic_identifier_fields:
+            raise NoteParseError("uuid_field cannot also be a semantic identifier field")
+
+
+def load_build_config(path: str | Path) -> BuildConfig:
+    """Load the typed configuration used by note parsing.
+
+    Exclusions are retained as configuration data, but enumeration and
+    exclusion policy belong to the later whole-vault assembly stage.
+    """
+
+    yaml = YAML(typ="safe", pure=True)
+    yaml.version = (1, 2)
+    try:
+        values = yaml.load(Path(path).read_text(encoding="utf-8")) or {}
+    except DuplicateKeyError as exc:
+        raise NoteParseError("build configuration contains duplicate keys") from exc
+    if not isinstance(values, dict):
+        raise NoteParseError("build configuration must contain a mapping")
+
+    def required_string(name: str) -> str:
+        value = values.get(name)
+        if not isinstance(value, str) or not value.strip():
+            raise NoteParseError(f"build configuration requires a non-empty {name}")
+        return value
+
+    def string_tuple(name: str) -> tuple[str, ...]:
+        value = values.get(name, [])
+        if not isinstance(value, list) or not all(isinstance(item, str) and item.strip() for item in value):
+            raise NoteParseError(f"build configuration {name} must be a list of non-empty strings")
+        return tuple(value)
+
+    uuid_field = required_string("uuid_field")
+    semantic_identifier_fields = string_tuple("semantic_identifier_fields")
+    return BuildConfig(
+        vault_name=required_string("vault_name"),
+        uuid_field=uuid_field,
+        excluded_folders=string_tuple("excluded_folders"),
+        semantic_identifier_fields=semantic_identifier_fields,
+    )
+
+
+@dataclass(frozen=True)
 class Wikilink:
     """An authored wikilink, retained without target resolution."""
 
     raw: str
     target: str
     label: str
+    target_region_fragment: str | None
+
+
+@dataclass(frozen=True)
+class Embed:
+    """An authored Obsidian embed retained without materialization/resolution."""
+
+    raw: str
+    target: str
+    label: str
+    target_region_fragment: str | None
 
 
 @dataclass(frozen=True)
@@ -59,7 +117,7 @@ class HeadingRegion:
 
 @dataclass(frozen=True)
 class SemanticUnit:
-    unit_id: str
+    local_order: int
     source_object_uuid: str
     authored_path: str
     path_hierarchy: tuple[str, ...]
@@ -67,6 +125,7 @@ class SemanticUnit:
     raw_markdown: str
     parsed_text: str
     wikilinks: tuple[Wikilink, ...]
+    embeds: tuple[Embed, ...]
 
 
 @dataclass(frozen=True)
@@ -76,7 +135,9 @@ class ParsedNote:
     units: tuple[SemanticUnit, ...]
 
 
-_WIKILINK = re.compile(r"\[\[([^\]|]+)(?:\|([^\]]+))?\]\]")
+_EMBED = re.compile(r"!\[\[([^\]|#]+)(?:#([^\]|]+))?(?:\|([^\]]+))?\]\]")
+_WIKILINK = re.compile(r"\[\[([^\]|#]+)(?:#([^\]|]+))?(?:\|([^\]]+))?\]\]")
+_CALLOUT = re.compile(r"^\[!([A-Za-z0-9_-]+)\](?:[ \t]+|$)")
 
 
 def _wikilink_rule(state: Any, silent: bool) -> bool:
@@ -86,16 +147,34 @@ def _wikilink_rule(state: Any, silent: bool) -> bool:
     upstream parser and cannot accidentally become wikilink tokens.
     """
 
+    embed_match = _EMBED.match(state.src, state.pos)
+    if embed_match is not None:
+        if silent:
+            return True
+        token = state.push("embed", "", 0)
+        target = embed_match.group(1)
+        label = embed_match.group(3) or target
+        token.content = label
+        token.attrs = {
+            "target": target,
+            "target_region_fragment": embed_match.group(2),
+            "label": label,
+            "raw": embed_match.group(0),
+        }
+        state.pos = embed_match.end()
+        return True
+
     match = _WIKILINK.match(state.src, state.pos)
     if match is None or (state.pos > 0 and state.src[state.pos - 1] == "\\"):
         return False
     if silent:
         return True
     token = state.push("wikilink", "", 0)
-    token.content = match.group(2) or match.group(1)
+    token.content = match.group(3) or match.group(1)
     token.attrs = {
         "target": match.group(1),
-        "label": match.group(2) or match.group(1),
+        "label": match.group(3) or match.group(1),
+        "target_region_fragment": match.group(2),
         "raw": match.group(0),
     }
     state.pos = match.end()
@@ -104,6 +183,9 @@ def _wikilink_rule(state: Any, silent: bool) -> bool:
 
 def _markdown_parser() -> MarkdownIt:
     parser = MarkdownIt("commonmark")
+    # GFM's table rule is the supported markdown-it-py block extension used
+    # here; without it a pipe table is only a paragraph.
+    gfm_plugin(parser)
     parser.inline.ruler.before("text", "semantic_traversal_wikilink", _wikilink_rule)
     return parser
 
@@ -139,7 +221,7 @@ def _admitted_fields(frontmatter: dict[str, Any], names: Iterable[str]) -> tuple
     for name in names:
         if name not in frontmatter:
             fields.append(FrontmatterField(name, "absent"))
-        elif frontmatter[name] is None or frontmatter[name] == "":
+        elif frontmatter[name] is None:
             fields.append(FrontmatterField(name, "present_blank", frontmatter[name]))
         else:
             fields.append(FrontmatterField(name, "present_value", frontmatter[name]))
@@ -171,43 +253,68 @@ def _root_block_spans(tokens: list[Any], body_lines: list[str]) -> list[tuple[in
     return [(start, end, token) for start, end, token in spans if end > start and end <= len(body_lines)]
 
 
-def _parsed_text_and_links(parser: MarkdownIt, raw: str) -> tuple[str, tuple[Wikilink, ...]]:
+def _parsed_text_and_links(parser: MarkdownIt, raw: str, *, callout: bool = False) -> tuple[str, tuple[Wikilink, ...], tuple[Embed, ...]]:
     """Extract visible text from parsed Markdown blocks, not source lines."""
 
     tokens = parser.parse(raw)
     text_parts: list[str] = []
     links: list[Wikilink] = []
+    embeds: list[Embed] = []
     for token in tokens:
         if token.type == "inline" and token.children:
+            inline_parts: list[str] = []
             for child in token.children:
                 if child.type == "wikilink":
                     attrs = child.attrs or {}
-                    links.append(Wikilink(attrs["raw"], attrs["target"], attrs["label"]))
-                    text_parts.append(child.content)
+                    links.append(Wikilink(attrs["raw"], attrs["target"], attrs["label"], attrs["target_region_fragment"]))
+                    inline_parts.append(child.content)
+                elif child.type == "embed":
+                    attrs = child.attrs or {}
+                    embeds.append(Embed(attrs["raw"], attrs["target"], attrs["label"], attrs["target_region_fragment"]))
                 elif child.type in {"text", "code_inline", "softbreak", "hardbreak"}:
-                    text_parts.append(child.content if child.type != "softbreak" else "\n")
+                    inline_parts.append(child.content if child.type != "softbreak" else "\n")
+            if inline_parts:
+                text_parts.append("".join(inline_parts))
         elif token.type in {"code_block", "fence"}:
             text_parts.append(token.content)
-    return "".join(text_parts), tuple(links)
+    # Block-level inline tokens are separate Markdown structures.  Joining
+    # them with a newline preserves lexical separation without authored syntax.
+    parsed_text = "\n".join(part for part in text_parts if part)
+    if callout:
+        parsed_text = _CALLOUT.sub("", parsed_text, count=1)
+    return parsed_text, tuple(links), tuple(embeds)
 
 
-def parse_note(path: str | Path, *, vault_root: str | Path | None = None, semantic_identifier_fields: Iterable[str]) -> ParsedNote:
+def parse_note(path: str | Path, *, vault_root: str | Path, build_config: BuildConfig) -> ParsedNote:
     """Parse exactly one Markdown note using the supplied build admission list."""
 
     source_path = Path(path)
     source = source_path.read_text(encoding="utf-8")
     frontmatter, body_start = _frontmatter(source)
-    uuid = frontmatter.get("uuid")
+    uuid = frontmatter.get(build_config.uuid_field)
     if not isinstance(uuid, str) or not uuid.strip():
         raise NoteParseError("frontmatter must contain one non-empty uuid")
-    authored_path = source_path.relative_to(vault_root).as_posix() if vault_root else source_path.as_posix()
-    hierarchy = _path_data(authored_path)
-    semantic_object = SemanticObject(uuid, authored_path, hierarchy, frontmatter, _admitted_fields(frontmatter, semantic_identifier_fields))
+    try:
+        authored_path = source_path.relative_to(Path(vault_root)).as_posix()
+    except ValueError as exc:
+        raise NoteParseError("note path must be beneath vault_root") from exc
+    hierarchy = _path_data("/".join(PurePosixPath(authored_path).parts[:-1]))
+    semantic_object = SemanticObject(uuid, authored_path, hierarchy, frontmatter, _admitted_fields(frontmatter, build_config.semantic_identifier_fields))
 
     body = "".join(source.splitlines(keepends=True)[body_start:])
     body_lines = body.splitlines(keepends=True)
     parser = _markdown_parser()
     tokens = parser.parse(body)
+    for index, token in enumerate(tokens):
+        if token.type != "blockquote_open":
+            continue
+        inline = next((candidate for candidate in tokens[index + 1 :] if candidate.type == "inline"), None)
+        if inline is not None and _CALLOUT.match(inline.content):
+            token.type = "callout_open"
+            token.attrs = {"kind": _CALLOUT.match(inline.content).group(1)}
+            closing = next((candidate for candidate in tokens[index + 1 :] if candidate.type == "blockquote_close"), None)
+            if closing is not None:
+                closing.type = "callout_close"
     regions: list[HeadingRegion] = []
     active: list[HeadingRegion] = []
     units: list[SemanticUnit] = []
@@ -216,12 +323,13 @@ def parse_note(path: str | Path, *, vault_root: str | Path | None = None, semant
         if token.type == "heading_open":
             level = int(token.tag[1:])
             inline = next(t for t in tokens[tokens.index(token) + 1 :] if t.type == "inline")
-            heading, _ = _parsed_text_and_links(parser, inline.content)
+            heading, _, _ = _parsed_text_and_links(parser, inline.content)
             active[:] = [region for region in active if region.level < level]
             region = HeadingRegion(f"region-{len(regions) + 1:04d}", level, heading, raw, tuple(r.region_id for r in active), active[-1].region_id if active else None)
             regions.append(region)
             active.append(region)
         else:
-            parsed, links = _parsed_text_and_links(parser, raw)
-            units.append(SemanticUnit(f"unit-{len(units) + 1:04d}", uuid, authored_path, hierarchy, tuple(r.region_id for r in active), raw, parsed, links))
+            is_callout = token.type == "callout_open"
+            parsed, links, embeds = _parsed_text_and_links(parser, raw, callout=is_callout)
+            units.append(SemanticUnit(len(units) + 1, uuid, authored_path, hierarchy, tuple(r.region_id for r in active), raw, parsed, links, embeds))
     return ParsedNote(semantic_object, tuple(regions), tuple(units))
