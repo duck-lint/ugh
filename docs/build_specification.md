@@ -236,10 +236,10 @@ Stored corpus vectors and conversation-time query vectors must use a compatible 
 Admitted frontmatter wikilinks produce field-named relations; body wikilinks produce `linked_to`; prose does not generate inferred relation labels. Path-derived scope topology remains semantically meaningful regardless of future graph representation choices—implementation must accommodate this and not silently subsume decision.
 ### 11.2 Authored containment and scope topology is projected onto the graph
 The graph represents direct authored structural containment in addition to wikilink-derived relations. Graph structural node kinds are: `scope` (an authored vault-relative path scope), `semantic_object`, `semantic_region`, `semantic_unit`. Direct structural relations are: `contains_scope`, `contains_object`, `contains_region`, `contains_unit`. Only direct authored containment edges are materialized. Transitive containment is derived by graph traversal and is not stored as additional semantic facts. Traversal may follow an edge outbound or inbound; inverse copies of the same structural relation are not separately materialized. Scope-node identity is determined by its complete vault-relative scope path, not by the component name alone. Region-node identity is contextual to its semantic object and complete region hierarchy, not by heading text alone. Structural graph edges are derivative representations of the authored path, object, region, and unit topology. They do not create additional semantic authority.
-## 13. Corpus semantic capability catalog
-### 13.1 Capability catalog contents
+## 12. Corpus semantic capability catalog
+### 12.1 Capability catalog contents
 The specification defines catalog classes and generation rules. Concrete semantic-identifier field names, identifier values, region values, path values, and field-derived relation names are generated from the current build configuration and ingested corpus and are not hardcoded by this specification. The capability catalog does not contain occurrence counts. Presence in the capability catalog means the value, structure, relation, or retrieval capability exists in the current ingested corpus. **Availability not cardinality.**
-### 13.2 Capability catalog representation
+### 12.2 Capability catalog representation
 The capability catalog uses a hybrid structured representation:
 1. a field/capability matrix describing semantic dimensions, represented values, retrieval surfaces, and supported operators;
 2. a relation grammar describing available relation types and their allowed source and target kinds.
@@ -274,7 +274,7 @@ The capability catalog uses a hybrid structured representation:
 **BUILD CONFIG:** defines which semantic-identifier fields are admitted
 **CORPUS:** supplies the actual values and wikilink targets
 **BUILT CAPABILITY CATALOG:** contains the concrete instantiated fields, values, and relation names
-### 13.3 ### Control-plane boundary
+### 12.3 ### Control-plane boundary
 The retrieval control plane is the deterministic execution boundary between a model-selected retrieval request and the retrieval surfaces exposed by a completed build. The capability catalog declares which retrieval field classes, fields, relations, operators, and surface capabilities are available in that build. Model 1 may select only operations exposed by the capability catalog.
 The control plane must:
 - validate a requested retrieval operation against the completed build's capability catalog;
@@ -284,13 +284,13 @@ The control plane must:
 - return canonical retrieval identities for hydration.
 The control plane does not invent semantic capabilities, infer unavailable operators, reinterpret canonical values, or expand the capability catalog. Runtime limits, budgets, and other runtime policy remain separate from projection identity and from the capability catalog. The concrete control-plane request schema, dispatch interface, and shared operator representation are intentionally deferred until the constitutive retrieval surfaces have been implemented and validated. That later design must be derived from the actual accepted exact, lexical, vector, and graph surface contracts rather than requiring those surfaces to conform to a prematurely chosen common interface.
 The capability catalog describes retrieval availability and legal operation grammar, not corpus-instance inventory. It may expose available semantic field classes, node classes, relation classes, relation names, retrieval surfaces, and supported operators. It does not enumerate canonical semantic objects, semantic regions, semantic units, or their internal identities for Model 1. Corpus instances are discovered by executing retrieval operations against the completed build.
-## 14. Build publication and repair behavior
-### 14.1 Publish only a referentially valid completed build
+## 13. Build publication and repair behavior
+### 13.1 Publish only a referentially valid completed build
 An ingest with unresolved authored links does not publish a completed build. Complete parsing and validation before marking the build publishable. On failure, keep the prior valid published build unaffected if one exists and emit the repair manifest.
-### 14.2 Build validation and repair manifest
+### 13.2 Build validation and repair manifest
 Validation is aggregate rather than fail-fast. Before rejecting an ingest, the build must collect and report every independently detectable validation failure across the included corpus. One validation failure must not prevent validation of unrelated objects or relations. The repair manifest records all detected failures with sufficient source location and target/collision information to repair them. A failure that prevents further parsing of a particular source may limit validation downstream of that source, but must not stop validation of the remainder of the corpus. Any validation failure prevents publication of the new build.
-## 15 Tech stack
-### 15.1 The below technologies are intended to implement the contracts above, not the other way around
+## 14 Tech stack
+### 14.1 The below technologies are intended to implement the contracts above, not the other way around
 #### Build runtime
 - Python 3.14.x
 #### Markdown parsing
