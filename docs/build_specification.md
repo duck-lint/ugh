@@ -275,16 +275,15 @@ The capability catalog uses a hybrid structured representation:
 **CORPUS:** supplies the actual values and wikilink targets
 **BUILT CAPABILITY CATALOG:** contains the concrete instantiated fields, values, and relation names
 ### 13.3 ### Control-plane boundary
-The retrieval control plane is the deterministic execution boundary between a model-selected retrieval request and the retrieval surfaces exposed by a
-completed build. The capability catalog declares which retrieval field classes, fields, relations, operators, and surface capabilities are available in that build. Model 1 may select only operations exposed by the capability catalog.
+The retrieval control plane is the deterministic execution boundary between a model-selected retrieval request and the retrieval surfaces exposed by a completed build. The capability catalog declares which retrieval field classes, fields, relations, operators, and surface capabilities are available in that build. Model 1 may select only operations exposed by the capability catalog.
 The control plane must:
 - validate a requested retrieval operation against the completed build's capability catalog;
 - reject unavailable fields, relations, operators, or surface capabilities;
 - dispatch valid requests to the corresponding deterministic retrieval surface;
 - preserve the retrieval surface's defined semantics;
 - return canonical retrieval identities for hydration.
-The control plane does not invent semantic capabilities, infer unavailable operators, reinterpret canonical values, or expand the capability catalog.
-Runtime limits, budgets, and other runtime policy remain separate from projection identity and from the capability catalog. The concrete control-plane request schema, dispatch interface, and shared operator representation are intentionally deferred until the constitutive retrieval surfaces have been implemented and validated. That later design must be derived from the actual accepted exact, lexical, vector, and graph surface contracts rather than requiring those surfaces to conform to a prematurely chosen common interface.
+The control plane does not invent semantic capabilities, infer unavailable operators, reinterpret canonical values, or expand the capability catalog. Runtime limits, budgets, and other runtime policy remain separate from projection identity and from the capability catalog. The concrete control-plane request schema, dispatch interface, and shared operator representation are intentionally deferred until the constitutive retrieval surfaces have been implemented and validated. That later design must be derived from the actual accepted exact, lexical, vector, and graph surface contracts rather than requiring those surfaces to conform to a prematurely chosen common interface.
+The capability catalog describes retrieval availability and legal operation grammar, not corpus-instance inventory. It may expose available semantic field classes, node classes, relation classes, relation names, retrieval surfaces, and supported operators. It does not enumerate canonical semantic objects, semantic regions, semantic units, or their internal identities for Model 1. Corpus instances are discovered by executing retrieval operations against the completed build.
 ## 14. Build publication and repair behavior
 ### 14.1 Publish only a referentially valid completed build
 An ingest with unresolved authored links does not publish a completed build. Complete parsing and validation before marking the build publishable. On failure, keep the prior valid published build unaffected if one exists and emit the repair manifest.
