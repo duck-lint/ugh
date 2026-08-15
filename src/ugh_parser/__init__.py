@@ -21,6 +21,7 @@ from .substrate import SubstrateError, foreign_key_check, hydrate_object, hydrat
 from .exact import exact_lookup, build_exact_index
 from .lexical import LexicalHit, build_lexical_index, lexical_integrity_check, lexical_lookup
 from .graph import GraphDiscoveryHit, GraphEdgeOccurrence, GraphError, GraphHandle, GraphTraversalHit, build_graph, graph_discover, graph_integrity_check, graph_relation_lookup, graph_traverse
+from .vector import EmbeddingContract, EmbeddingProviderError, OllamaEmbeddingProvider, VectorError, VectorHit, VectorTarget, build_vector_index, segment_and_embed, validate_vector_index, vector_eligible_targets, vector_lookup
 
 __all__ = [
     "FrontmatterField",
@@ -82,4 +83,15 @@ __all__ = [
     "graph_relation_lookup",
     "graph_traverse",
     "graph_integrity_check",
+    "EmbeddingContract",
+    "EmbeddingProviderError",
+    "OllamaEmbeddingProvider",
+    "VectorError",
+    "VectorHit",
+    "VectorTarget",
+    "build_vector_index",
+    "segment_and_embed",
+    "validate_vector_index",
+    "vector_eligible_targets",
+    "vector_lookup",
 ]
