@@ -20,6 +20,7 @@ from .canonical import CanonicalObject, CanonicalObjectRelation, CanonicalRegion
 from .substrate import SubstrateError, foreign_key_check, hydrate_object, hydrate_unit, write_completed_ingest
 from .exact import exact_lookup, build_exact_index
 from .lexical import LexicalHit, build_lexical_index, lexical_integrity_check, lexical_lookup
+from .graph import GraphDiscoveryHit, GraphEdgeOccurrence, GraphError, GraphHandle, GraphTraversalHit, build_graph, graph_discover, graph_integrity_check, graph_relation_lookup, graph_traverse
 
 __all__ = [
     "FrontmatterField",
@@ -71,4 +72,14 @@ __all__ = [
     "build_lexical_index",
     "lexical_lookup",
     "lexical_integrity_check",
+    "GraphHandle",
+    "GraphEdgeOccurrence",
+    "GraphDiscoveryHit",
+    "GraphTraversalHit",
+    "GraphError",
+    "build_graph",
+    "graph_discover",
+    "graph_relation_lookup",
+    "graph_traverse",
+    "graph_integrity_check",
 ]
