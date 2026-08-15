@@ -31,17 +31,18 @@ Every semantic unit must remain connected to the object it came from. Hydration 
 Vector segmentation is a derivative embedding operation. It does not split or replace the canonical semantic object or semantic unit represented by the vector target.
 - vector input is never silently truncated;
 - if the complete authorized vector input fits the pinned embedding model's input capacity, it produces exactly one vector segment;
-- fit is determined using the pinned embedding model's actual tokenization and input-capacity contract, not a character-count or approximate-token heuristic;
+- fit is determined by the actual pinned embedding provider with provider-side truncation disabled, not by a character-count, approximate-token heuristic, or independently substituted tokenizer;
 - if the input does not fit, segmentation greedily takes the largest fitting prefix;
 - segmentation prefers, in order:
   1. the latest newline boundary that fits;
   2. the latest whitespace boundary that fits;
-  3. the embedding model's token boundary when no earlier authored textual boundary can produce a fitting segment;
-- segments do not overlap;
-- segmentation does not normalize, rewrite, summarize, or otherwise alter the represented text;
-- concatenating the segment texts in segment-ordinal order must reproduce the exact authorized vector-input string;
-- all segments retain the same `target_kind` and `target_identity`;
-- hydration always returns the complete canonical target, never merely the winning vector segment.
+  3. the latest Unicode code-point boundary whose prefix is confirmed to fit by the pinned embedding provider when no earlier authored textual boundary can produce a fitting segment;
+  - segments do not overlap;
+  - segmentation does not normalize, rewrite, summarize, or otherwise alter the represented text;
+  - concatenating the segment texts in segment-ordinal order must reproduce the exact authorized vector-input string;
+  - all segments retain the same `target_kind` and `target_identity`;
+  - hydration always returns the complete canonical target, never merely the winning vector segment.
+Input fit is established by the actual pinned embedding provider with provider-side truncation disabled. A local tokenizer approximation is not authoritative for determining whether input fits.
 ### 4.5 Semantic Model Sample
 path: `C:\Users\madis\Desktop\kháos\LAYER-1 PILLARS\PILLAR 2-DYNAMIC COHERENCE\JOURNAL\2026\2026-04\07_Tuesday.md`
 - Lines 1-26: YAML **frontmatter** with 3 **wikilink** connections—I'd expect the semantics of those **wikilink** connections to be carried into the **units** along with the rest of the **frontmatter identifiers**
@@ -276,7 +277,7 @@ At minimum preserve:
 - vector dtype;
 - normalization rule;
 - similarity metric; and
-- the model/tokenization input-capacity contract used for segmentation.
+- the embedding-provider identity and input-capacity contract used for segmentation.
 The vector projection persists this compatibility record with the built vector state so query-time compatibility validation does not depend on reconstructing build-time assumptions. Conversation-time query embedding must use the compatible completed-build embedding contract. A missing or incompatible encoder identity or vector contract fails explicitly. Matching dimensionality alone does not establish compatibility. The completed build determines the encoder contract first. Query runtime conforms to that completed build; query runtime does not substitute whatever embedding model happens to be available later.
 ### 9.5 Vector query input
 Vector retrieval accepts one query-text operand. The query embedding is derived from exactly the supplied query text. The vector surface does not append conversation context, semantic identifiers, paths, regions, relation names, instructions, prefixes, or other semantic expansion. Any probabilistic reformulation of the user's intent into vector-query text belongs upstream to Model 1. A query that exceeds the compatible embedding model's input capacity fails explicitly. Query text is not silently truncated, segmented, pooled, averaged, or expanded into multiple query vectors. An empty or whitespace-only vector query is invalid.
