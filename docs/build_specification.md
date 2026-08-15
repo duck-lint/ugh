@@ -213,14 +213,24 @@ Each operand supplied to `terms` must correspond to exactly one lexical token un
 #### 9.5.1 BM25 ranking 
 Lexical lookup is computed within the queried lexical field dimension. Unrelated lexical fields must not affect its document-frequency or document-length statistics.
 ## 10. Vector representation
-### 10.1 Vector records derive from semantic units
-Each semantic unit produces one or more vector records derived only
-from its parsed intrinsic text.
+### 10.1 Vector records derive from semantic objects, then units
+for each canonical object:
+    if object has >= 1 semantic unit:
+        object contributes NO object-level fallback vector
+        for each unit:
+            if unit parsed_text has linguistic content:
+                vectorize parsed_text
+            if unit parsed_text is ∅ / whitespace-only:
+                that unit contributes no vector
+    else:
+        vectorize canonical authored object name
+        as semantic_object
 ```text
 VectorRecord {
-    vector_id,
-    unit_id,
-    segment_ordinal,
+    vector_id
+    target_kind        # semantic_unit | semantic_object
+    target_identity    # unit_id | source_object_uuid
+    segment_ordinal
     vector
 }
 ```
@@ -239,7 +249,9 @@ Visible link text remains in parsed linguistic text.
 ### 10.3 The vector index is not a semantic source of truth
 Canonical semantic metadata belongs to the semantic unit, not to duplicated vector metadata. Hydration will retrieve the canonical unit through `unit_id` that contains all the rest of the semantics.
 ### 10.4 Build-time and query-time embeddings must be compatible
-Stored corpus vectors and conversation-time query vectors must use a compatible embedding model and version. This dependency must be driven chronologically (ingest comes before conversation, therefore conversation runtime will be dependent on verification against build embedding model, not the otherway around)
+Stored corpus vectors and conversation-time query vectors must use a compatible embedding model and version. This dependency must be driven chronologically (ingest comes before conversation, therefore conversation runtime will be dependent on verification against build embedding model, not the otherway around).
+### 10.5 Vector query input
+Vector retrieval accepts one query-text operand. The query embedding is derived from exactly the supplied query text. The vector surface does not append conversation context, semantic identifiers, paths, regions, relation names, instructions, prefixes, or other semantic expansion. Any probabilistic reformulation of the user's intent into vector-query text belongs upstream to Model 1.
 ## 11. Graph representation
 ### 11.1 Graph edges come only from authored structure in this scope
 Admitted frontmatter wikilinks produce field-named relations; body wikilinks produce `linked_to`; prose does not generate inferred relation labels. Path-derived scope topology remains semantically meaningful regardless of future graph representation choices—implementation must accommodate this and not silently subsume decision.
