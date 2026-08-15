@@ -209,11 +209,11 @@ def _register_relations(connection: sqlite3.Connection) -> None:
         [(STRUCTURAL, name) for name in _STRUCTURAL_RELATIONS] + [_BODY_RELATION],
     )
     fields = connection.execute(
-        "SELECT DISTINCT field_name FROM object_identifiers ORDER BY field_name"
+        "SELECT DISTINCT relation_name FROM object_relations ORDER BY relation_name"
     ).fetchall()
     connection.executemany(
         "INSERT INTO graph_relation_types VALUES (?, ?)",
-        ((SEMANTIC_IDENTIFIER, field_name) for (field_name,) in fields),
+        ((SEMANTIC_IDENTIFIER, relation_name) for (relation_name,) in fields),
     )
 
 

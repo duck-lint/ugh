@@ -31,7 +31,7 @@ class GraphProjectionTests(unittest.TestCase):
 
     def _build(self):
         config = BuildConfig(
-            "test", "uuid", (), ("aliases", "tags", "book_read_today", "related", "other"),
+            "test", "uuid", (), ("aliases", "tags", "book_read_today", "related", "other", "linked_to", "contains_unit"),
         )
         directory = TemporaryDirectory()
         root = Path(directory.name)
@@ -43,6 +43,8 @@ book_read_today:
   - "[[Target]]"
   - "[[Target]]"
 related: "[[Target#Inner]]"
+linked_to: "[[Target]]"
+contains_unit: "[[Target]]"
 ---
 # Outer
 outer unit [[Target#Inner]] [[Target]]
@@ -82,11 +84,23 @@ book_read_today: "[[Target]]"
             )}
             self.assertEqual(relations[("semantic_identifier", "book_read_today")], 3)
             self.assertEqual(relations[("semantic_identifier", "related")], 1)
+            self.assertEqual(relations[("semantic_identifier", "linked_to")], 1)
+            self.assertEqual(relations[("semantic_identifier", "contains_unit")], 1)
             self.assertEqual(relations[("body_wikilink", "linked_to")], 2)
             self.assertEqual(relations[("structural", "contains_scope")], 1)
             self.assertEqual(relations[("structural", "contains_object")], 2)
             self.assertEqual(relations[("structural", "contains_region")], 3)
             self.assertEqual(relations[("structural", "contains_unit")], 3)
+            registered = {
+                name for _, name in connection.execute(
+                    "SELECT relation_class, relation_name FROM graph_relation_types WHERE relation_class = 'semantic_identifier'"
+                )
+            }
+            represented = {row[0] for row in connection.execute("SELECT DISTINCT relation_name FROM object_relations")}
+            self.assertEqual(registered, represented)
+            self.assertNotIn("aliases", registered)
+            self.assertNotIn("tags", registered)
+            self.assertNotIn("other", registered)
             related = graph_relation_lookup(connection, "semantic_identifier", "related")
             self.assertEqual(len(related), 1)
             self.assertEqual(related[0].target.node_kind, "semantic_region")
@@ -138,6 +152,14 @@ book_read_today: "[[Target]]"
             target = GraphHandle("semantic_object", ("target",))
             inbound = graph_traverse(connection, target, "semantic_identifier", "book_read_today", "inbound")
             self.assertEqual(len(inbound), 3)
+            self.assertEqual(len(graph_relation_lookup(connection, "semantic_identifier", "linked_to")), 1)
+            self.assertEqual(len(graph_relation_lookup(connection, "semantic_identifier", "contains_unit")), 1)
+            with self.assertRaises(KeyError):
+                graph_relation_lookup(connection, "semantic_identifier", "tags")
+            with self.assertRaises(KeyError):
+                graph_relation_lookup(connection, "semantic_identifier", "aliases")
+            with self.assertRaises(KeyError):
+                graph_relation_lookup(connection, "semantic_identifier", "other")
             with self.assertRaises(KeyError):
                 graph_relation_lookup(connection, "body_wikilink", "missing")
             with self.assertRaises(ValueError):
