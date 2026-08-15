@@ -117,6 +117,16 @@ body linked_to relations
 Runtime hydration by `unit_id` will return the canonical record and its full differing semantic context without relying on duplicated index metadata.
 ### 7.2 Retrieval hits converge on `unit_id` and hydrate
 A hit through any retrieval surface lands on a `unit_id`. Hydration uses that ID to return the canonical semantic unit and all of its context for synthesis.
+### 7.3 Canonical objects preserve object-level authored state
+A canonical semantic object retains the object-level authored state required to represent the object independently of its semantic units. 
+At minimum preserve:
+- source_object_uuid;
+- authored source path and semantic path hierarchy;
+- admitted frontmatter identifier states;
+- authored frontmatter wikilink relation occurrences;
+- canonical regions belonging to the object.
+Unit inheritance does not replace object-level provenance. An object remains canonically represented even when it contains zero semantic units. Object-level frontmatter state must not be reconstructed later by deduplicating inherited copies from semantic units.
+Admitted `tags`, when present, remain available as object-level authored grouping state for graph discovery without becoming graph relations.
 ## 9. Exact and lexical representations
 ### 9.1 Searchable fields remain separate
 Structured semantic fields must not be flattened into one large string for search. Fields remain separately addressable:
@@ -172,7 +182,6 @@ For text-like values, exact comparison uses the normalization defined in §9.3:
 - collapse runs of whitespace to one space.
 For non-text scalar values, exact comparison preserves canonical type and value.
 Examples:
-
     integer 7        ≠ string "7"
     boolean true     ≠ integer 1
     date 2026-04-07  ≠ string "2026-04-07"
@@ -240,10 +249,10 @@ The graph represents direct authored structural containment in addition to wikil
 1. Graph discovery and graph traversal are distinct operations. Discovery locates represented corpus instances; traversal follows represented edges involving an already discovered instance.
 2. Semantic objects and semantic regions are lexically discoverable through authored canonical address text. Discovery returns opaque canonical graph handles; internal UUIDs/region identities are not exposed as a corpus inventory to Model 1.
 3. Relation types are not semantically inferred by deterministic discovery. Model 1 selects a relation class/name from the capability catalog; deterministic graph execution locates or traverses instances of that represented relation.
-Graph discovery and traversal may use canonical object, region, or relation handles as intermediate execution state. Graph evidence delivered for canonical unit hydration ultimately converges on `unit_id`.
+4. Graph discovery over semantic objects may inspect authored object-address text and admitted `tags`. Tags participate only as authored discovery/grouping descriptors. They do not create graph nodes or graph edges in this scope. Other admitted semantic identifiers are not automatically available to graph node discovery merely because they exist canonically or are searchable through another retrieval surface. Graph discovery and traversal may use canonical object, region, or relation handles as intermediate execution state. Graph evidence delivered for canonical unit hydration ultimately converges on `unit_id`.
 ## 12. Corpus semantic capability catalog
 ### 12.1 Capability catalog contents
-The specification defines catalog classes and generation rules. Concrete semantic-identifier field names, identifier values, region values, path values, and field-derived relation names are generated from the current build configuration and ingested corpus and are not hardcoded by this specification. The capability catalog does not contain occurrence counts. Presence in the capability catalog means the value, structure, relation, or retrieval capability exists in the current ingested corpus. **Availability not cardinality.**
+The specification defines catalog classes and generation rules. The built capability catalog describes which semantic field classes, fields, node classes, relation classes, relation names, retrieval surfaces, value shapes, and operators are available in the completed build. The catalog describes availability and legal retrieval grammar, not corpus-instance inventory. It does not enumerate concrete semantic objects, semantic regions, semantic units, paths, region values, identifier values, or internal identities merely because those instances exist in the corpus. Concrete corpus instances are discovered by executing retrieval operations against the completed build. The capability catalog does not contain occurrence counts. **Availability not cardinality.**
 ### 12.2 Capability catalog representation
 The capability catalog uses a hybrid structured representation:
 1. a field/capability matrix describing semantic dimensions, represented values, retrieval surfaces, and supported operators;
@@ -252,16 +261,20 @@ The capability catalog uses a hybrid structured representation:
 
 | field class                  | values                                                                        | exact | lexical | vector |
 | ---------------------------- | ----------------------------------------------------------------------------- | ----- | ------- | ------ |
-| `parsed_text`                | free text from semantic units                                                 | yes   | yes     | yes    |
-| admitted semantic identifier | every unique represented value for each field admitted by build configuration | yes   | yes     | no     |
-| semantic region              | every unique represented region heading/path value                            | yes   | yes     | no     |
-| semantic path component      | every unique represented vault-relative scope/path value                      | yes   | yes     | no     |
-| `raw_markdown`               | authored Markdown of semantic units                                           | yes   | no      | no     |
+| `parsed_text`                | semantic unit free text                                               | yes   | yes     | yes    |
+| admitted semantic identifier | represented canonical value shapes                       | yes*   | yes**     | no     |
+| semantic region              | canonical region address text/path                             | yes   | yes     | no     |
+| semantic path component      | authored vault-relative scope/path text                      | yes   | yes     | no     |
+| `raw_markdown`               | authored unit Markdown                                            | yes   | no      | no     |
+
+`*` exact: supported typed scalar / sequence-member semantics
+
+`**` lexical: text-bearing values only
 #### Relations
 
 | relation class | relation name | source | target |
 |---|---|---|---|
-| admitted wikilink-valued semantic identifier | the admitted field name | `semantic_unit` | resolved `semantic_object` / `semantic_region` as permitted by the authored wikilink |
+| admitted wikilink-valued semantic identifier | the admitted field name | `semantic_object` | resolved `semantic_object` / `semantic_region` as permitted by the authored wikilink |
 | body wikilink | `linked_to` | `semantic_unit` | resolved `semantic_object` / `semantic_region` |
 | structural scope containment | `contains_scope` | `scope` | `scope` |
 | structural object containment | `contains_object` | `scope` | `semantic_object` |
