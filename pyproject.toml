@@ -10,6 +10,7 @@ dependencies = [
   "markdown-it-py",
   "mdit-py-plugins",
   "ruamel.yaml",
+  "numpy>=2.0",
 ]
 
 [tool.setuptools.packages.find]

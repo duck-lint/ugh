@@ -1,5 +1,7 @@
 import sqlite3
 import unittest
+from unittest.mock import patch
+import os
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -8,6 +10,7 @@ import numpy as np
 from ugh_parser import (
     EmbeddingContract,
     EmbeddingProviderError,
+    OllamaEmbeddingProvider,
     VectorError,
     VectorTarget,
     build_vector_index,
@@ -20,8 +23,8 @@ from ugh_parser.substrate import SCHEMA
 
 
 class ProviderDouble:
-    def __init__(self, capacity=5, identity="test-provider"):
-        self.contract = EmbeddingContract("test-model", identity, 1024, "float32", "l2", "cosine", capacity)
+    def __init__(self, capacity=5, identity="sha256-" + "a" * 64):
+        self.contract = EmbeddingContract("qwen3-embedding:0.6b", identity, 1024, "float32", "l2", "cosine", capacity)
         self.calls = []
 
     def embed(self, text, *, truncate=False):
@@ -34,6 +37,14 @@ class ProviderDouble:
         vector[hash(text) % 1023] = 1.0
         vector[1023] = 1.0
         return vector
+
+
+class NonMonotonicProvider(ProviderDouble):
+    def embed(self, text, *, truncate=False):
+        self.calls.append((text, truncate))
+        if text == "abcdef":
+            raise EmbeddingProviderError("provider rejected this candidate", capacity_exceeded=True)
+        return super().embed(text, truncate=truncate)
 
 
 class VectorProjectionTests(unittest.TestCase):
@@ -52,6 +63,7 @@ class VectorProjectionTests(unittest.TestCase):
             "INSERT INTO canonical_units VALUES (?, ?, ?, ?, ?, ?)",
             (2, "empty-object", "Empty.md", 1, "raw", ""),
         )
+        connection.commit()
         return connection
 
     def test_targets_are_exact_units_or_zero_unit_object_names(self):
@@ -71,6 +83,11 @@ class VectorProjectionTests(unittest.TestCase):
         self.assertEqual("".join(text for text, _ in segments), source)
         self.assertEqual([text for text, _ in segments], ["abc", "def", "gh"])
         self.assertTrue(all(truncate is False for _, truncate in provider.calls))
+
+    def test_fallback_checks_descending_boundaries_without_monotonicity(self):
+        provider = NonMonotonicProvider(capacity=5)
+        segments = segment_and_embed(provider, "abcdef")
+        self.assertEqual([text for text, _ in segments], ["abcde", "f"])
 
     def test_build_persists_float32_vectors_and_reopens(self):
         connection = self._connection()
@@ -92,6 +109,47 @@ class VectorProjectionTests(unittest.TestCase):
             hits = vector_lookup(reopened, matrix_path, "query", provider)
             self.assertEqual({(hit.target_kind, hit.target_identity) for hit in hits}, {("semantic_unit", 1), ("semantic_object", "zero-object")})
 
+    def test_corrupt_mapping_rows_are_rejected(self):
+        connection = self._connection()
+        provider = ProviderDouble(capacity=100)
+        with TemporaryDirectory() as directory:
+            matrix_path = Path(directory) / "vectors.npy"
+            build_vector_index(connection, matrix_path, provider)
+            connection.execute("UPDATE vector_segments SET matrix_row = 2 WHERE matrix_row = 1")
+            with self.assertRaises(VectorError):
+                validate_vector_index(connection, matrix_path)
+
+            connection.execute("UPDATE vector_segments SET matrix_row = 1 WHERE matrix_row = 2")
+            connection.execute("UPDATE vector_segments SET unit_id = 2 WHERE target_kind = 'semantic_unit'")
+            with self.assertRaises(VectorError):
+                validate_vector_index(connection, matrix_path)
+
+    def test_nonproduction_provider_cannot_publish_completed_state(self):
+        connection = self._connection()
+        provider = ProviderDouble(capacity=100)
+        provider.contract = EmbeddingContract("test-model", "test-provider", 1024, "float32", "l2", "cosine", 100)
+        with TemporaryDirectory() as directory:
+            with self.assertRaises(VectorError):
+                build_vector_index(connection, Path(directory) / "vectors.npy", provider)
+
+    def test_ollama_capacity_classification_requires_exact_response(self):
+        provider = OllamaEmbeddingProvider.__new__(OllamaEmbeddingProvider)
+        provider.model = "qwen3-embedding:0.6b"
+        provider.base_url = "http://unused"
+        provider.timeout = 1
+        provider.contract = ProviderDouble().contract
+        cases = [
+            ("the input length exceeds the context length", True, 400),
+            ("input length is malformed", False, 400),
+            ("token length failed", False, 500),
+        ]
+        for message, expected_capacity, status in cases:
+            with self.subTest(message=message):
+                with patch("ugh_parser.vector._post_json", side_effect=EmbeddingProviderError(message, status=status)):
+                    with self.assertRaises(EmbeddingProviderError) as raised:
+                        provider.embed("x", truncate=False)
+                self.assertEqual(raised.exception.capacity_exceeded, expected_capacity)
+
     def test_provider_contract_mismatch_is_rejected(self):
         connection = self._connection()
         provider = ProviderDouble(capacity=100)
@@ -101,3 +159,33 @@ class VectorProjectionTests(unittest.TestCase):
             mismatch = ProviderDouble(capacity=100, identity="different-provider")
             with self.assertRaises(VectorError):
                 vector_lookup(connection, matrix_path, "query", mismatch)
+
+    def test_matrix_promotion_failure_restores_previous_completed_pair(self):
+        connection = self._connection()
+        provider = ProviderDouble(capacity=100)
+        with TemporaryDirectory() as directory:
+            matrix_path = Path(directory) / "vectors.npy"
+            build_vector_index(connection, matrix_path, provider)
+            old_bytes = matrix_path.read_bytes()
+            old_digest = connection.execute(
+                "SELECT matrix_sha256 FROM vector_build_contract WHERE contract_id = 1"
+            ).fetchone()[0]
+            real_replace = os.replace
+            failed = False
+
+            def fail_new_promotion(source, destination):
+                nonlocal failed
+                if Path(source).name.startswith(".vectors.") and Path(destination) == matrix_path and not failed:
+                    failed = True
+                    raise OSError("injected matrix promotion failure")
+                return real_replace(source, destination)
+
+            with patch("ugh_parser.vector.os.replace", side_effect=fail_new_promotion):
+                with self.assertRaises(OSError):
+                    build_vector_index(connection, matrix_path, provider)
+            self.assertEqual(matrix_path.read_bytes(), old_bytes)
+            self.assertEqual(
+                connection.execute("SELECT matrix_sha256 FROM vector_build_contract WHERE contract_id = 1").fetchone()[0],
+                old_digest,
+            )
+            validate_vector_index(connection, matrix_path)

@@ -16,6 +16,7 @@ import tempfile
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path, PurePosixPath
 from typing import Any, Protocol
 
@@ -36,9 +37,10 @@ class VectorError(ValueError):
 class EmbeddingProviderError(VectorError):
     """An embedding request failed at the provider boundary."""
 
-    def __init__(self, message: str, *, capacity_exceeded: bool = False) -> None:
+    def __init__(self, message: str, *, capacity_exceeded: bool = False, status: int | None = None) -> None:
         super().__init__(message)
         self.capacity_exceeded = capacity_exceeded
+        self.status = status
 
 
 @dataclass(frozen=True)
@@ -104,7 +106,7 @@ def _post_json(url: str, payload: dict[str, Any], timeout: float) -> dict[str, A
         except (json.JSONDecodeError, UnicodeDecodeError):
             detail = {}
         message = str(detail.get("error", detail or exc.reason))
-        raise EmbeddingProviderError(message, capacity_exceeded=False) from exc
+        raise EmbeddingProviderError(message, status=exc.code) from exc
     except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
         raise EmbeddingProviderError(f"embedding provider request failed: {exc}") from exc
 
@@ -157,9 +159,13 @@ class OllamaEmbeddingProvider:
                 self.timeout,
             )
         except EmbeddingProviderError as exc:
-            message = str(exc).lower()
-            capacity = any(term in message for term in ("context", "token", "input", "length", "too long"))
-            raise EmbeddingProviderError(str(exc), capacity_exceeded=capacity) from exc
+            # This is the specific Ollama response observed for truncate=false
+            # overflow.  Other 400/500 responses remain provider failures.
+            capacity = (
+                exc.status == 400
+                and str(exc).strip().lower() == "the input length exceeds the context length"
+            )
+            raise EmbeddingProviderError(str(exc), capacity_exceeded=capacity, status=exc.status) from exc
         embeddings = response.get("embeddings")
         if not isinstance(embeddings, list) or len(embeddings) != 1:
             raise EmbeddingProviderError("Ollama returned an unexpected embedding count")
@@ -221,6 +227,11 @@ def segment_and_embed(provider: EmbeddingProvider, text: str) -> tuple[tuple[str
     output: list[tuple[str, np.ndarray]] = []
     remainder = text
     while remainder:
+        # Each remainder is independently eligible to be one complete segment.
+        remainder_vector = try_prefix(remainder)
+        if remainder_vector is not None:
+            output.append((remainder, remainder_vector))
+            break
         candidates = [i + 1 for i, char in enumerate(remainder[:-1]) if char == "\n"]
         candidates.sort(reverse=True)
         candidates += sorted(
@@ -229,28 +240,22 @@ def segment_and_embed(provider: EmbeddingProvider, text: str) -> tuple[tuple[str
         )
         chosen: tuple[int, np.ndarray] | None = None
         for boundary in candidates:
-            value = try_prefix(remainder[:boundary])
+            try:
+                value = try_prefix(remainder[:boundary])
+            except EmbeddingProviderError:
+                raise
             if value is not None:
                 chosen = (boundary, value)
                 break
         if chosen is None:
-            low, high = 1, len(remainder)
-            best: tuple[int, np.ndarray] | None = None
-            while low <= high:
-                middle = (low + high) // 2
-                value = try_prefix(remainder[:middle])
+            for boundary in range(len(remainder) - 1, 0, -1):
+                value = try_prefix(remainder[:boundary])
                 if value is None:
-                    high = middle - 1
-                else:
-                    best = (middle, value)
-                    low = middle + 1
-            if best is None:
+                    continue
+                chosen = (boundary, value)
+                break
+            if chosen is None:
                 raise VectorError("provider rejected every non-empty Unicode code-point prefix")
-            # Reconfirm the selected fallback boundary directly at the provider.
-            confirmed = try_prefix(remainder[:best[0]])
-            if confirmed is None:
-                raise VectorError("provider acceptance boundary was not stable")
-            chosen = (best[0], confirmed)
         boundary, value = chosen
         output.append((remainder[:boundary], value))
         remainder = remainder[boundary:]
@@ -270,7 +275,8 @@ CREATE TABLE vector_build_contract (
     similarity_metric TEXT NOT NULL,
     input_capacity INTEGER NOT NULL,
     capacity_mechanism TEXT NOT NULL,
-    tokenization_contract TEXT NOT NULL
+    tokenization_contract TEXT NOT NULL,
+    matrix_sha256 TEXT NOT NULL
 );
 CREATE TABLE vector_segments (
     matrix_row INTEGER PRIMARY KEY,
@@ -289,17 +295,38 @@ CREATE TABLE vector_segments (
 """
 
 
-def _write_matrix(path: Path, matrix: np.ndarray) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.NamedTemporaryFile(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp", delete=False) as handle:
-        temporary = Path(handle.name)
-    try:
-        np.save(temporary, matrix, allow_pickle=False)
-        saved = Path(f"{temporary}.npy")
-        os.replace(saved, path)
-    finally:
-        temporary.unlink(missing_ok=True)
-        Path(f"{temporary}.npy").unlink(missing_ok=True)
+def _require_production_contract(provider: EmbeddingProvider) -> None:
+    contract = provider.contract
+    if (
+        contract.requested_model != REQUESTED_MODEL
+        or not re.fullmatch(r"sha256-[0-9a-f]{64}", contract.resolved_model_identity, re.IGNORECASE)
+        or contract.embedding_dimension != VECTOR_DIMENSION
+        or contract.vector_dtype != VECTOR_DTYPE
+        or contract.normalization_rule.lower() != NORMALIZATION_RULE
+        or contract.similarity_metric.lower() != SIMILARITY_METRIC
+        or contract.input_capacity <= 0
+        or contract.capacity_mechanism != "ollama_provider_acceptance_truncate_false"
+        or contract.tokenization_contract != "provider-opaque acceptance; no local tokenizer"
+    ):
+        raise VectorError("provider contract does not satisfy the pinned production vector contract")
+
+
+def _write_temporary_matrix(directory: Path, matrix: np.ndarray) -> Path:
+    directory.mkdir(parents=True, exist_ok=True)
+    descriptor, name = tempfile.mkstemp(dir=directory, prefix=".vectors.", suffix=".npy")
+    os.close(descriptor)
+    path = Path(name)
+    np.save(path, matrix, allow_pickle=False)
+    return path
+
+
+def _matrix_sha256(path: Path) -> str:
+    import hashlib
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for block in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
 
 
 def build_vector_index(
@@ -308,49 +335,94 @@ def build_vector_index(
     provider: EmbeddingProvider,
 ) -> None:
     """Embed every eligible canonical target and persist vectors plus mapping."""
-    if provider.contract.embedding_dimension != VECTOR_DIMENSION:
-        raise VectorError("the completed vector contract requires 1024 dimensions")
+    _require_production_contract(provider)
     targets = vector_eligible_targets(connection)
     rows: list[tuple[VectorTarget, int, str, np.ndarray]] = []
     vectors: list[np.ndarray] = []
-    for target in targets:
-        for ordinal, (segment_text, vector) in enumerate(segment_and_embed(provider, target.input_text)):
+    # Targets are independent.  Preserve target and segment order while
+    # allowing the provider to serve independent requests concurrently.
+    def embed_target(target: VectorTarget) -> tuple[tuple[str, np.ndarray], ...]:
+        return segment_and_embed(provider, target.input_text)
+
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        segmented_targets = tuple(executor.map(embed_target, targets))
+    for target, segments in zip(targets, segmented_targets):
+        for ordinal, (segment_text, vector) in enumerate(segments):
             rows.append((target, ordinal, segment_text, vector))
             vectors.append(vector)
     matrix = np.vstack(vectors).astype(np.float32, copy=False) if vectors else np.empty((0, VECTOR_DIMENSION), dtype=np.float32)
-    _write_matrix(Path(matrix_path), matrix)
+    active_path = Path(matrix_path)
+    temporary_matrix = _write_temporary_matrix(active_path.parent, matrix)
+    matrix_digest = _matrix_sha256(temporary_matrix)
     connection.execute("PRAGMA foreign_keys = ON")
+    if connection.in_transaction:
+        temporary_matrix.unlink(missing_ok=True)
+        raise VectorError("vector build requires a connection with no active transaction")
+    old_matrix: Path | None = None
+    promoted = False
     try:
-        with connection:
-            connection.executescript("DROP TABLE IF EXISTS vector_segments; DROP TABLE IF EXISTS vector_build_contract;")
-            connection.executescript(VECTOR_SCHEMA)
-            c = provider.contract
-            connection.execute(
-                "INSERT INTO vector_build_contract VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (c.requested_model, c.resolved_model_identity, c.embedding_dimension, c.vector_dtype,
-                 c.normalization_rule, c.similarity_metric, c.input_capacity,
-                 c.capacity_mechanism, c.tokenization_contract),
-            )
-            connection.executemany(
-                """INSERT INTO vector_segments
-                (matrix_row, target_kind, target_identity_json, segment_ordinal, segment_text, unit_id, source_object_uuid)
-                VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                (
-                    (row, target.target_kind, json.dumps(target.target_identity, ensure_ascii=False), ordinal,
-                     segment_text, target.target_identity if target.target_kind == "semantic_unit" else None,
-                     target.target_identity if target.target_kind == "semantic_object" else None)
-                    for row, (target, ordinal, segment_text, _) in enumerate(rows)
-                ),
-            )
+        connection.execute("BEGIN")
+        connection.execute("DROP TABLE IF EXISTS vector_segments")
+        connection.execute("DROP TABLE IF EXISTS vector_build_contract")
+        for statement in VECTOR_SCHEMA.split(";"):
+            if statement.strip():
+                connection.execute(statement)
+        c = provider.contract
+        connection.execute(
+            "INSERT INTO vector_build_contract VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (c.requested_model, c.resolved_model_identity, c.embedding_dimension, c.vector_dtype,
+             c.normalization_rule, c.similarity_metric, c.input_capacity,
+             c.capacity_mechanism, c.tokenization_contract, matrix_digest),
+        )
+        connection.executemany(
+            """INSERT INTO vector_segments
+            (matrix_row, target_kind, target_identity_json, segment_ordinal, segment_text, unit_id, source_object_uuid)
+            VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (
+                (row, target.target_kind, json.dumps(target.target_identity, ensure_ascii=False), ordinal,
+                 segment_text, target.target_identity if target.target_kind == "semantic_unit" else None,
+                 target.target_identity if target.target_kind == "semantic_object" else None)
+                for row, (target, ordinal, segment_text, _) in enumerate(rows)
+            ),
+        )
+        validate_vector_index(connection, temporary_matrix)
+        active_path.parent.mkdir(parents=True, exist_ok=True)
+        if active_path.exists():
+            old_matrix = active_path.with_name(f".{active_path.name}.backup")
+            old_matrix.unlink(missing_ok=True)
+            os.replace(active_path, old_matrix)
+        os.replace(temporary_matrix, active_path)
+        promoted = True
+        connection.commit()
+        if old_matrix is not None:
+            old_matrix.unlink(missing_ok=True)
     except sqlite3.IntegrityError as exc:
+        connection.rollback()
+        if promoted:
+            active_path.unlink(missing_ok=True)
+        if old_matrix is not None and old_matrix.exists():
+            os.replace(old_matrix, active_path)
+        temporary_matrix.unlink(missing_ok=True)
         raise VectorError(f"vector substrate integrity failure: {exc}") from exc
+    except Exception:
+        connection.rollback()
+        if promoted:
+            active_path.unlink(missing_ok=True)
+        if old_matrix is not None and old_matrix.exists():
+            os.replace(old_matrix, active_path)
+        temporary_matrix.unlink(missing_ok=True)
+        raise
 
 
 def _stored_contract(connection: sqlite3.Connection) -> EmbeddingContract:
-    row = connection.execute("SELECT * FROM vector_build_contract WHERE contract_id = 1").fetchone()
+    row = connection.execute(
+        """SELECT requested_model, resolved_model_identity, embedding_dimension, vector_dtype,
+        normalization_rule, similarity_metric, input_capacity, capacity_mechanism,
+        tokenization_contract FROM vector_build_contract WHERE contract_id = 1"""
+    ).fetchone()
     if row is None:
         raise VectorError("vector build contract is absent")
-    return EmbeddingContract(*row[1:])
+    return EmbeddingContract(*row)
 
 
 def validate_vector_index(connection: sqlite3.Connection, matrix_path: str | os.PathLike[str]) -> None:
@@ -360,9 +432,35 @@ def validate_vector_index(connection: sqlite3.Connection, matrix_path: str | os.
         raise VectorError("vectors.npy does not match the persisted vector contract")
     if not np.isfinite(matrix).all() or (matrix.shape[0] and not np.allclose(np.linalg.norm(matrix, axis=1), 1.0, atol=1e-5)):
         raise VectorError("vectors.npy contains invalid or unnormalized vectors")
-    count = connection.execute("SELECT COUNT(*) FROM vector_segments").fetchone()[0]
+    digest = connection.execute("SELECT matrix_sha256 FROM vector_build_contract WHERE contract_id = 1").fetchone()[0]
+    if _matrix_sha256(Path(matrix_path)) != digest:
+        raise VectorError("vectors.npy does not match the persisted matrix identity")
+    mapping_rows = connection.execute(
+        "SELECT matrix_row, target_kind, target_identity_json, unit_id, source_object_uuid, segment_ordinal, segment_text FROM vector_segments"
+    ).fetchall()
+    count = len(mapping_rows)
     if count != matrix.shape[0]:
         raise VectorError("vector mapping count does not match vectors.npy")
+    if sorted(row[0] for row in mapping_rows) != list(range(count)):
+        raise VectorError("vector mapping matrix rows are not exactly dense")
+    if connection.execute("PRAGMA foreign_key_check").fetchall():
+        raise VectorError("vector substrate has foreign-key violations")
+    for _, kind, identity_json, unit_id, source_uuid, _, _ in mapping_rows:
+        identity = json.loads(identity_json)
+        if kind == "semantic_unit":
+            if not isinstance(identity, int) or isinstance(identity, bool) or unit_id != identity or source_uuid is not None:
+                raise VectorError("inconsistent semantic-unit vector mapping")
+            if connection.execute("SELECT 1 FROM canonical_units WHERE unit_id = ?", (unit_id,)).fetchone() is None:
+                raise VectorError("vector mapping refers to an unknown canonical unit")
+        elif kind == "semantic_object":
+            if not isinstance(identity, str) or source_uuid != identity or unit_id is not None:
+                raise VectorError("inconsistent semantic-object vector mapping")
+            if connection.execute("SELECT 1 FROM canonical_objects WHERE source_object_uuid = ?", (source_uuid,)).fetchone() is None:
+                raise VectorError("vector mapping refers to an unknown canonical object")
+            if connection.execute("SELECT 1 FROM canonical_units WHERE source_object_uuid = ?", (source_uuid,)).fetchone() is not None:
+                raise VectorError("semantic-object fallback mapping has canonical units")
+        else:
+            raise VectorError("unknown vector target kind")
     expected_targets = {
         (t.target_kind, json.dumps(t.target_identity, ensure_ascii=False)): t
         for t in vector_eligible_targets(connection)
