@@ -196,9 +196,11 @@ Exact retrieval must not expose parser-local or database-local region identifier
   component value.
 Internal region IDs, SQLite row keys, and other implementation identifiers are not semantic exact-search values.
 ### 9.4 Lexical content is searchable
-Parsed unit content is lexically searchable. Admitted frontmatter fields (semantic identifiers) are lexical-searchable—this being driven by the build config. Region text and semantic path components are lexical-searchable as separate fields. Lexical retrieval performs word/phrase matching over their authored text; it does not embed them or infer semantic similarity. Date-valued admitted semantic identifiers are exact-searchable by value. Aliases are alternative authored names resolving to the same canonical target. Aliases are exact- and lexical-searchable without replacing the canonical name. Tags, when admitted by build config, are multi-valued semantic identifiers. Each tag value is separately exact- and lexical-searchable. Tags express authored semantic grouping; they do not create graph relations unless a separate explicit rule later says they do.
+Parsed unit content is lexically searchable. Lexical availability applies to text-bearing represented values. Non-text canonical values are not stringified to manufacture lexical capability. Lexical retrieval performs word/phrase matching over their authored text; it does not embed them or infer semantic similarity. Date-valued admitted semantic identifiers are exact-searchable by value. Aliases are alternative authored names resolving to the same canonical target. Aliases are exact- and lexical-searchable without replacing the canonical name. Tags, when admitted by build config, are multi-valued semantic identifiers. Each tag value is separately exact- and lexical-searchable. Tags express authored semantic grouping; they do not create graph relations unless a separate explicit rule later says they do.
 ### 9.5 lexical-index technology and tokenization
-Lexical retrieval uses a fielded inverted full-text index with Unicode-aware tokenization, case-insensitive terms, BM25 ranking, and phrase-query support. Common words are retained and naturally downweighted by BM25. No custom stopword list, stemming, synonym expansion, or semantic query expansion is used. Parsed unit text and admitted semantic-identifier fields remain separate lexical fields.
+Lexical retrieval uses a fielded inverted full-text index with Unicode-aware tokenization, case-insensitive terms, BM25 ranking, and phrase-query support. Common words are retained and naturally downweighted by BM25. No custom stopword list, stemming, synonym expansion, or semantic query expansion is used. Parsed unit text and admitted semantic-identifier fields remain separate lexical fields. 
+#### 9.5.1 BM25 ranking 
+Lexical lookup is computed within the queried lexical field dimension. Unrelated lexical fields must not affect its document-frequency or document-length statistics.
 ## 10. Vector representation
 ### 10.1 Vector records derive from semantic units
 Each semantic unit produces one or more vector records derived only
@@ -270,6 +272,17 @@ The capability catalog uses a hybrid structured representation:
 **BUILD CONFIG:** defines which semantic-identifier fields are admitted
 **CORPUS:** supplies the actual values and wikilink targets
 **BUILT CAPABILITY CATALOG:** contains the concrete instantiated fields, values, and relation names
+### 13.3 ### Control-plane boundary
+The retrieval control plane is the deterministic execution boundary between a model-selected retrieval request and the retrieval surfaces exposed by a
+completed build. The capability catalog declares which retrieval field classes, fields, relations, operators, and surface capabilities are available in that build. Model 1 may select only operations exposed by the capability catalog.
+The control plane must:
+- validate a requested retrieval operation against the completed build's capability catalog;
+- reject unavailable fields, relations, operators, or surface capabilities;
+- dispatch valid requests to the corresponding deterministic retrieval surface;
+- preserve the retrieval surface's defined semantics;
+- return canonical retrieval identities for hydration.
+The control plane does not invent semantic capabilities, infer unavailable operators, reinterpret canonical values, or expand the capability catalog.
+Runtime limits, budgets, and other runtime policy remain separate from projection identity and from the capability catalog. The concrete control-plane request schema, dispatch interface, and shared operator representation are intentionally deferred until the constitutive retrieval surfaces have been implemented and validated. That later design must be derived from the actual accepted exact, lexical, vector, and graph surface contracts rather than requiring those surfaces to conform to a prematurely chosen common interface.
 ## 14. Build publication and repair behavior
 ### 14.1 Publish only a referentially valid completed build
 An ingest with unresolved authored links does not publish a completed build. Complete parsing and validation before marking the build publishable. On failure, keep the prior valid published build unaffected if one exists and emit the repair manifest.
