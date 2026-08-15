@@ -37,11 +37,11 @@ Vector segmentation is a derivative embedding operation. It does not split or re
   1. the latest newline boundary that fits;
   2. the latest whitespace boundary that fits;
   3. the latest Unicode code-point boundary whose prefix is confirmed to fit by the pinned embedding provider when no earlier authored textual boundary can produce a fitting segment;
-  - segments do not overlap;
-  - segmentation does not normalize, rewrite, summarize, or otherwise alter the represented text;
-  - concatenating the segment texts in segment-ordinal order must reproduce the exact authorized vector-input string;
-  - all segments retain the same `target_kind` and `target_identity`;
-  - hydration always returns the complete canonical target, never merely the winning vector segment.
+- segments do not overlap;
+- segmentation does not normalize, rewrite, summarize, or otherwise alter the represented text;
+- concatenating the segment texts in segment-ordinal order must reproduce the exact authorized vector-input string;
+- all segments retain the same `target_kind` and `target_identity`;
+- hydration always returns the complete canonical target, never merely the winning vector segment.
 Input fit is established by the actual pinned embedding provider with provider-side truncation disabled. A local tokenizer approximation is not authoritative for determining whether input fits.
 ### 4.5 Semantic Model Sample
 path: `C:\Users\madis\Desktop\kháos\LAYER-1 PILLARS\PILLAR 2-DYNAMIC COHERENCE\JOURNAL\2026\2026-04\07_Tuesday.md`
