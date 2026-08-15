@@ -46,13 +46,30 @@ class ResolvedRelation:
 
 
 @dataclass(frozen=True)
+class ResolvedObjectRelation:
+    """One resolved authored frontmatter occurrence at object scope."""
+
+    relation_name: str
+    origin: str
+    source_field: str | None
+    raw: str
+    authored_target: str
+    authored_label: str
+    authored_region_fragment: str | None
+    source_object_uuid: str
+    source_path: str
+    target_object_uuid: str
+    target_region: RegionTarget | None
+
+
+@dataclass(frozen=True)
 class ResolutionFailure:
     kind: str
     message: str
     relation: RelationCandidate
     source_object_uuid: str
     source_path: str
-    local_order: int
+    local_order: int | None
     object_candidates: tuple[ObjectTarget, ...] = ()
     region_candidates: tuple[RegionTarget, ...] = ()
 
@@ -62,6 +79,7 @@ class ResolutionResult:
     materialized_corpus: MaterializedCorpus
     resolved_relations: tuple[ResolvedRelation, ...]
     failures: tuple[ResolutionFailure, ...]
+    resolved_object_relations: tuple[ResolvedObjectRelation, ...] = ()
 
     @property
     def is_valid(self) -> bool:
@@ -251,4 +269,53 @@ def resolve_relations(corpus: MaterializedCorpus) -> ResolutionResult:
                     target_region=region_target,
                 )
             )
-    return ResolutionResult(corpus, tuple(resolved), tuple(failures))
+    object_resolved: list[ResolvedObjectRelation] = []
+    for obj in corpus.objects:
+        for relation in obj.relations:
+            object_matches = _object_matches(relation.target, index)
+            if not object_matches:
+                failures.append(ResolutionFailure(
+                    "unresolved_object", f"unresolved authored object target {relation.target!r}",
+                    relation, obj.source_object_uuid, obj.authored_path, None,
+                ))
+                continue
+            if len(object_matches) > 1:
+                failures.append(ResolutionFailure(
+                    "ambiguous_object", f"ambiguous authored object target {relation.target!r}",
+                    relation, obj.source_object_uuid, obj.authored_path, None,
+                    object_candidates=object_matches,
+                ))
+                continue
+            object_target = object_matches[0]
+            region_target: RegionTarget | None = None
+            if relation.target_region_fragment is not None:
+                region_matches = tuple(
+                    region for region in index.regions_by_uuid[object_target.object_uuid]
+                    if region.address_text == relation.target_region_fragment
+                )
+                if not region_matches:
+                    normalized_fragment = _region_address_key(relation.target_region_fragment)
+                    region_matches = tuple(
+                        region for region in index.regions_by_uuid[object_target.object_uuid]
+                        if _region_address_key(region.address_text) == normalized_fragment
+                    )
+                if not region_matches:
+                    failures.append(ResolutionFailure(
+                        "unresolved_region", f"unresolved authored region target {relation.target_region_fragment!r}",
+                        relation, obj.source_object_uuid, obj.authored_path, None,
+                    ))
+                    continue
+                if len(region_matches) > 1:
+                    failures.append(ResolutionFailure(
+                        "ambiguous_region", f"ambiguous authored region target {relation.target_region_fragment!r}",
+                        relation, obj.source_object_uuid, obj.authored_path, None,
+                        region_candidates=region_matches,
+                    ))
+                    continue
+                region_target = region_matches[0]
+            object_resolved.append(ResolvedObjectRelation(
+                relation.relation_name, relation.origin, relation.source_field,
+                relation.raw, relation.target, relation.label, relation.target_region_fragment,
+                obj.source_object_uuid, obj.authored_path, object_target.object_uuid, region_target,
+            ))
+    return ResolutionResult(corpus, tuple(resolved), tuple(failures), tuple(object_resolved))

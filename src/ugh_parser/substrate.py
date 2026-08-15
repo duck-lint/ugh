@@ -13,6 +13,8 @@ from datetime import date, datetime
 from typing import Any
 
 from .canonical import (
+    CanonicalObject,
+    CanonicalObjectRelation,
     CanonicalRelation,
     CanonicalRegionReference,
     CanonicalUnit,
@@ -35,6 +37,15 @@ CREATE TABLE object_path_components (
     source_object_uuid TEXT NOT NULL,
     ordinal INTEGER NOT NULL,
     component TEXT NOT NULL,
+    PRIMARY KEY (source_object_uuid, ordinal),
+    FOREIGN KEY (source_object_uuid) REFERENCES canonical_objects(source_object_uuid)
+);
+CREATE TABLE object_identifiers (
+    source_object_uuid TEXT NOT NULL,
+    ordinal INTEGER NOT NULL,
+    field_name TEXT NOT NULL,
+    state TEXT NOT NULL,
+    value_json TEXT,
     PRIMARY KEY (source_object_uuid, ordinal),
     FOREIGN KEY (source_object_uuid) REFERENCES canonical_objects(source_object_uuid)
 );
@@ -67,6 +78,24 @@ CREATE TABLE canonical_units (
     raw_markdown TEXT NOT NULL,
     parsed_text TEXT NOT NULL,
     FOREIGN KEY (source_object_uuid) REFERENCES canonical_objects(source_object_uuid)
+);
+CREATE TABLE object_relations (
+    relation_row_id INTEGER PRIMARY KEY,
+    source_object_uuid TEXT NOT NULL,
+    relation_name TEXT NOT NULL,
+    origin TEXT NOT NULL,
+    source_field TEXT,
+    raw TEXT NOT NULL,
+    authored_target TEXT NOT NULL,
+    authored_label TEXT NOT NULL,
+    authored_region_fragment TEXT,
+    source_path TEXT NOT NULL,
+    target_object_uuid TEXT NOT NULL,
+    target_region_path_json TEXT,
+    FOREIGN KEY (source_object_uuid) REFERENCES canonical_objects(source_object_uuid),
+    FOREIGN KEY (target_object_uuid) REFERENCES canonical_objects(source_object_uuid),
+    FOREIGN KEY (target_object_uuid, target_region_path_json)
+        REFERENCES canonical_regions(source_object_uuid, region_path_json)
 );
 CREATE TABLE unit_path_components (
     unit_id INTEGER NOT NULL,
@@ -239,6 +268,31 @@ def write_completed_ingest(connection: sqlite3.Connection, completed_ingest: Com
                     "INSERT INTO region_path_components VALUES (?, ?, ?, ?)",
                     ((object_uuid, path_json, i, component) for i, component in enumerate(region.reference.region_path)),
                 )
+            for obj in completed_ingest.objects:
+                for i, field in enumerate(obj.admitted_identifiers):
+                    if field.state not in {"absent", "present_blank", "present_value"}:
+                        raise SubstrateError(f"unknown object identifier state: {field.state!r}")
+                    if field.state != "present_value" and field.value is not None:
+                        raise SubstrateError("non-value object identifier state has a value")
+                    connection.execute(
+                        "INSERT INTO object_identifiers VALUES (?, ?, ?, ?, ?)",
+                        (obj.source_object_uuid, i, field.name, field.state,
+                         _json_value(field.value) if field.state == "present_value" else None),
+                    )
+                for relation in obj.relations:
+                    target_path_json = (_path_json(relation.target_region.region_path)
+                                        if relation.target_region is not None else None)
+                    connection.execute(
+                        """INSERT INTO object_relations
+                        (source_object_uuid, relation_name, origin, source_field, raw, authored_target,
+                         authored_label, authored_region_fragment, source_path, target_object_uuid,
+                         target_region_path_json)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                        (relation.source_object_uuid, relation.relation_name, relation.origin,
+                         relation.source_field, relation.raw, relation.authored_target,
+                         relation.authored_label, relation.authored_region_fragment, relation.source_path,
+                         relation.target_object_uuid, target_path_json),
+                    )
             for unit in completed_ingest.units:
                 connection.execute(
                     "INSERT INTO canonical_units VALUES (?, ?, ?, ?, ?, ?)",
@@ -348,6 +402,56 @@ def hydrate_unit(connection: sqlite3.Connection, unit_id: int) -> CanonicalUnit:
     ).fetchall())
     return CanonicalUnit(unit_id, source_uuid, source_path, local_order, path_hierarchy, region_path,
                          raw_markdown, parsed_text, tuple(fields), tuple(relations), embeds)
+
+
+def hydrate_object(connection: sqlite3.Connection, source_object_uuid: str) -> CanonicalObject:
+    """Hydrate one complete canonical object using SQLite state only."""
+
+    _enable_foreign_keys(connection)
+    row = connection.execute(
+        "SELECT source_path FROM canonical_objects WHERE source_object_uuid = ?",
+        (source_object_uuid,),
+    ).fetchone()
+    if row is None:
+        raise KeyError(f"unknown canonical source_object_uuid: {source_object_uuid}")
+    source_path = row[0]
+    path_hierarchy = _path_from_rows(connection.execute(
+        "SELECT ordinal, component FROM object_path_components WHERE source_object_uuid = ? ORDER BY ordinal",
+        (source_object_uuid,),
+    ).fetchall())
+    fields = tuple(
+        FrontmatterField(name, state, _decode_value(value_json))
+        for _, name, state, value_json in connection.execute(
+            """SELECT ordinal, field_name, state, value_json FROM object_identifiers
+            WHERE source_object_uuid = ? ORDER BY ordinal""", (source_object_uuid,)
+        ).fetchall()
+    )
+    relations: list[CanonicalObjectRelation] = []
+    for row in connection.execute(
+        """SELECT relation_name, origin, source_field, raw, authored_target, authored_label,
+        authored_region_fragment, source_path, target_object_uuid, target_region_path_json
+        FROM object_relations WHERE source_object_uuid = ? ORDER BY relation_row_id""",
+        (source_object_uuid,),
+    ).fetchall():
+        (name, origin, source_field, raw, target, label, fragment, rel_source_path,
+         target_uuid, target_path_json) = row
+        target_region = (_region_reference(connection, target_uuid, target_path_json)
+                         if target_path_json is not None else None)
+        relations.append(CanonicalObjectRelation(
+            name, origin, source_field, raw, target, label, fragment,
+            source_object_uuid, rel_source_path, target_uuid, target_region,
+        ))
+    regions: list[Any] = []
+    for path_json, level, raw, parsed_text, address_text, parent_region_id in connection.execute(
+        """SELECT region_path_json, level, raw_markdown, parsed_text, address_text, parent_region_id
+        FROM canonical_regions WHERE source_object_uuid = ? ORDER BY canonical_ordinal""",
+        (source_object_uuid,),
+    ).fetchall():
+        reference = _region_reference(connection, source_object_uuid, path_json)
+        from .canonical import CanonicalRegion
+        regions.append(CanonicalRegion(reference, level, raw, parsed_text, address_text, parent_region_id))
+    return CanonicalObject(source_object_uuid, source_path, path_hierarchy,
+                           fields, tuple(relations), tuple(regions))
 
 
 def foreign_key_check(connection: sqlite3.Connection) -> tuple[tuple[Any, ...], ...]:

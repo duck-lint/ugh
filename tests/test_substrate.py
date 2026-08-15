@@ -122,7 +122,7 @@ target body
                 "SELECT name FROM sqlite_master WHERE type = 'table'"
             )}
             self.assertEqual(tables, {
-                "canonical_objects", "object_path_components", "canonical_regions",
+            "canonical_objects", "object_path_components", "object_identifiers", "object_relations", "canonical_regions",
                 "region_path_components", "canonical_units", "unit_path_components",
                 "unit_region_path", "inherited_identifiers", "canonical_relations",
                 "structured_embeds",

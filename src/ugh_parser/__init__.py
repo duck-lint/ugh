@@ -14,10 +14,10 @@ from .parser import (
     parse_note,
 )
 from .vault import CorpusFailure, VaultParseResult, discover_markdown_notes, parse_vault
-from .materialize import MaterializedCorpus, MaterializedUnit, MaterializationError, RelationCandidate, materialize_context
-from .resolve import ResolutionError, ResolutionFailure, ResolutionResult, ResolvedRelation, ObjectTarget, RegionTarget, resolve_relations
-from .canonical import CanonicalObject, CanonicalRegion, CanonicalRegionReference, CanonicalRelation, CanonicalUnit, CanonicalizationError, CompletedIngest, canonicalize_ingest
-from .substrate import SubstrateError, foreign_key_check, hydrate_unit, write_completed_ingest
+from .materialize import MaterializedCorpus, MaterializedObject, MaterializedUnit, MaterializationError, RelationCandidate, materialize_context
+from .resolve import ResolutionError, ResolutionFailure, ResolutionResult, ResolvedObjectRelation, ResolvedRelation, ObjectTarget, RegionTarget, resolve_relations
+from .canonical import CanonicalObject, CanonicalObjectRelation, CanonicalRegion, CanonicalRegionReference, CanonicalRelation, CanonicalUnit, CanonicalizationError, CompletedIngest, canonicalize_ingest
+from .substrate import SubstrateError, foreign_key_check, hydrate_object, hydrate_unit, write_completed_ingest
 from .exact import exact_lookup, build_exact_index
 from .lexical import LexicalHit, build_lexical_index, lexical_integrity_check, lexical_lookup
 
@@ -38,6 +38,7 @@ __all__ = [
     "discover_markdown_notes",
     "parse_vault",
     "MaterializedCorpus",
+    "MaterializedObject",
     "MaterializedUnit",
     "MaterializationError",
     "RelationCandidate",
@@ -45,11 +46,13 @@ __all__ = [
     "ResolutionError",
     "ResolutionFailure",
     "ResolutionResult",
+    "ResolvedObjectRelation",
     "ResolvedRelation",
     "ObjectTarget",
     "RegionTarget",
     "resolve_relations",
     "CanonicalObject",
+    "CanonicalObjectRelation",
     "CanonicalRegion",
     "CanonicalRegionReference",
     "CanonicalRelation",
@@ -60,6 +63,7 @@ __all__ = [
     "SubstrateError",
     "write_completed_ingest",
     "hydrate_unit",
+    "hydrate_object",
     "foreign_key_check",
     "build_exact_index",
     "exact_lookup",

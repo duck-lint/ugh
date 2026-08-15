@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 from .materialize import MaterializedCorpus, MaterializedUnit, RelationCandidate
 from .parser import Embed, FrontmatterField, HeadingRegion
-from .resolve import RegionTarget, ResolutionResult, ResolvedRelation
+from .resolve import RegionTarget, ResolutionResult, ResolvedObjectRelation, ResolvedRelation
 from .vault import VaultParseResult
 
 
@@ -41,7 +41,26 @@ class CanonicalObject:
     source_object_uuid: str
     source_path: str
     path_hierarchy: tuple[str, ...]
+    admitted_identifiers: tuple[FrontmatterField, ...]
+    relations: tuple[CanonicalObjectRelation, ...]
     regions: tuple[CanonicalRegion, ...]
+
+
+@dataclass(frozen=True)
+class CanonicalObjectRelation:
+    """One authored frontmatter relation occurrence owned by an object."""
+
+    relation_name: str
+    origin: str
+    source_field: str | None
+    raw: str
+    authored_target: str
+    authored_label: str
+    authored_region_fragment: str | None
+    source_object_uuid: str
+    source_path: str
+    target_object_uuid: str
+    target_region: CanonicalRegionReference | None
 
 
 @dataclass(frozen=True)
@@ -141,12 +160,31 @@ def canonicalize_ingest(result: ResolutionResult) -> CompletedIngest:
                 source_uuid,
                 note.semantic_object.authored_path,
                 note.semantic_object.path_hierarchy,
+                note.semantic_object.admitted_fields,
+                (),
                 object_regions,
             )
         )
         canonical_regions.extend(object_regions)
         for region in object_regions:
             region_references[(source_uuid, region.reference.region_path)] = region.reference
+
+    object_relations_by_uuid: dict[str, list[CanonicalObjectRelation]] = {}
+    for relation in result.resolved_object_relations:
+        object_relations_by_uuid.setdefault(relation.source_object_uuid, []).append(
+            _canonical_object_relation(relation, region_references)
+        )
+    canonical_objects = [
+        CanonicalObject(
+            obj.source_object_uuid,
+            obj.source_path,
+            obj.path_hierarchy,
+            obj.admitted_identifiers,
+            tuple(object_relations_by_uuid.get(obj.source_object_uuid, ())),
+            obj.regions,
+        )
+        for obj in canonical_objects
+    ]
 
     resolved_relations = iter(result.resolved_relations)
     canonical_units: list[CanonicalUnit] = []
@@ -238,6 +276,30 @@ def _canonical_relation(
         relation.source_object_uuid,
         relation.source_path,
         relation.local_order,
+        relation.target_object_uuid,
+        target_region,
+    )
+
+
+def _canonical_object_relation(
+    relation: ResolvedObjectRelation,
+    region_references: dict[tuple[str, tuple[str, ...]], CanonicalRegionReference],
+) -> CanonicalObjectRelation:
+    target_region = (
+        _region_reference(region_references, relation.target_region)
+        if relation.target_region is not None
+        else None
+    )
+    return CanonicalObjectRelation(
+        relation.relation_name,
+        relation.origin,
+        relation.source_field,
+        relation.raw,
+        relation.authored_target,
+        relation.authored_label,
+        relation.authored_region_fragment,
+        relation.source_object_uuid,
+        relation.source_path,
         relation.target_object_uuid,
         target_region,
     )
