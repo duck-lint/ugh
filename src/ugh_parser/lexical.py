@@ -20,6 +20,7 @@ PATH_COMPONENT_FIELD = "path_component"
 
 _DIMENSION_TABLE_PREFIX = "lexical_fts_"
 _SAFE_NAME = re.compile(r"^[A-Za-z0-9_]+$")
+_TOKENIZER = "unicode61 remove_diacritics 0"
 
 
 @dataclass(frozen=True)
@@ -58,7 +59,7 @@ def _create_dimension(connection: sqlite3.Connection, field_class: str, field_na
     table_name = _table_name(field_class, field_name)
     quoted = _quoted_identifier(table_name)
     connection.execute(
-        f"CREATE VIRTUAL TABLE {quoted} USING fts5(unit_id UNINDEXED, content, tokenize='unicode61 remove_diacritics 0')"
+        f"CREATE VIRTUAL TABLE {quoted} USING fts5(unit_id UNINDEXED, content, tokenize='{_TOKENIZER}')"
     )
     connection.execute(
         "INSERT INTO lexical_dimension_registry (field_class, field_name, table_name) VALUES (?, ?, ?)",
@@ -165,6 +166,33 @@ def _dimension_table(connection: sqlite3.Connection, field_class: str, field_nam
     return row[0]
 
 
+def _validate_terms_operands(connection: sqlite3.Connection, operands: tuple[str, ...]) -> None:
+    """Require each public term operand to be one configured FTS token."""
+
+    connection.execute("DROP TABLE IF EXISTS temp.lexical_terms_probe_vocab")
+    connection.execute("DROP TABLE IF EXISTS temp.lexical_terms_probe")
+    connection.execute(
+        f"CREATE VIRTUAL TABLE temp.lexical_terms_probe USING fts5(content, tokenize='{_TOKENIZER}')"
+    )
+    connection.execute(
+        "CREATE VIRTUAL TABLE temp.lexical_terms_probe_vocab USING fts5vocab(lexical_terms_probe, instance)"
+    )
+    try:
+        for operand in operands:
+            connection.execute("INSERT INTO temp.lexical_terms_probe(rowid, content) VALUES (1, ?)", (operand,))
+            token_count = connection.execute(
+                "SELECT COUNT(*) FROM temp.lexical_terms_probe_vocab WHERE doc = 1"
+            ).fetchone()[0]
+            connection.execute("DELETE FROM temp.lexical_terms_probe")
+            if token_count != 1:
+                raise ValueError(
+                    f"terms operand must tokenize to exactly one lexical token: {operand!r} produced {token_count}"
+                )
+    finally:
+        connection.execute("DROP TABLE IF EXISTS temp.lexical_terms_probe_vocab")
+        connection.execute("DROP TABLE IF EXISTS temp.lexical_terms_probe")
+
+
 def lexical_lookup(
     connection: sqlite3.Connection,
     field_class: str,
@@ -178,6 +206,7 @@ def lexical_lookup(
     if operator == "terms":
         if not isinstance(operand, (list, tuple)) or not operand or not all(isinstance(item, str) and item for item in operand):
             raise TypeError("terms requires a non-empty sequence of non-empty strings")
+        _validate_terms_operands(connection, tuple(operand))
         match_expression = " OR ".join(_fts_literal(item) for item in operand)
     elif operator == "phrase":
         if not isinstance(operand, str) or not operand.strip():

@@ -93,6 +93,26 @@ class LexicalRetrievalTests(unittest.TestCase):
             connection.close()
             directory.cleanup()
 
+    def test_terms_operands_must_be_single_configured_tokens(self):
+        directory, _, connection = self._build()
+        try:
+            build_lexical_index(connection)
+            self.assertEqual(
+                {hit.unit_id for hit in lexical_lookup(connection, "intrinsic", "parsed_text", "terms", ["socially", "independent"])},
+                {1, 3, 4},
+            )
+            with self.assertRaises(ValueError):
+                lexical_lookup(connection, "intrinsic", "parsed_text", "terms", ["socially necessary"])
+            with self.assertRaises(ValueError):
+                lexical_lookup(connection, "intrinsic", "parsed_text", "terms", ["socially-necessary"])
+            self.assertTrue(lexical_lookup(connection, "semantic_identifier", "title", "terms", ["café"]))
+            self.assertTrue(lexical_lookup(connection, "intrinsic", "parsed_text", "phrase", "socially necessary"))
+            with self.assertRaises(ValueError):
+                lexical_lookup(connection, "intrinsic", "parsed_text", "terms", ["socially OR necessary"])
+        finally:
+            connection.close()
+            directory.cleanup()
+
     def test_identifiers_only_lexicalize_direct_strings(self):
         directory, _, connection = self._build()
         try:
@@ -121,7 +141,7 @@ class LexicalRetrievalTests(unittest.TestCase):
             self.assertTrue(lexical_lookup(connection, "semantic_path", "path_component", "terms", ["journal"]))
             self.assertTrue(lexical_lookup(connection, "semantic_path", "path_component", "terms", ["2026"]))
             self.assertEqual(lexical_lookup(connection, "semantic_path", "path_component", "phrase", "journal 2026"), ())
-            self.assertEqual(lexical_lookup(connection, "region", "region_text", "terms", ["region-0001"]), ())
+            self.assertEqual(lexical_lookup(connection, "region", "region_text", "terms", ["region"]), ())
         finally:
             connection.close()
             directory.cleanup()
