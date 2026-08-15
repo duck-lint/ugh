@@ -19,6 +19,11 @@ REGION_PATH_FIELD = "region_path"
 PATH_HIERARCHY_FIELD = "path_hierarchy"
 PATH_COMPONENT_FIELD = "path_component"
 
+INTRINSIC_FIELD_CLASS = "intrinsic"
+SEMANTIC_IDENTIFIER_FIELD_CLASS = "semantic_identifier"
+REGION_FIELD_CLASS = "region"
+SEMANTIC_PATH_FIELD_CLASS = "semantic_path"
+
 _WHITESPACE = re.compile(r"\s+")
 
 
@@ -26,17 +31,17 @@ def _normalize_text(value: str) -> str:
     return _WHITESPACE.sub(" ", value.casefold().strip())
 
 
-def _text_entry(field_name: str, value: str, unit_id: int) -> tuple[str, str, str, int]:
-    return field_name, "text", _normalize_text(value), unit_id
+def _text_entry(field_class: str, field_name: str, value: str, unit_id: int) -> tuple[str, str, str, str, int]:
+    return field_class, field_name, "text", _normalize_text(value), unit_id
 
 
-def _typed_entry(field_name: str, value: Any, unit_id: int) -> tuple[str, str, str, int]:
-    return field_name, "typed", _json_value(value), unit_id
+def _typed_entry(field_class: str, field_name: str, value: Any, unit_id: int) -> tuple[str, str, str, str, int]:
+    return field_class, field_name, "typed", _json_value(value), unit_id
 
 
-def _path_entry(field_name: str, values: Iterable[str], unit_id: int) -> tuple[str, str, str, int]:
+def _path_entry(field_class: str, field_name: str, values: Iterable[str], unit_id: int) -> tuple[str, str, str, str, int]:
     normalized = [_normalize_text(value) for value in values]
-    return field_name, "path", json.dumps(normalized, ensure_ascii=False, separators=(",", ":")), unit_id
+    return field_class, field_name, "path", json.dumps(normalized, ensure_ascii=False, separators=(",", ":")), unit_id
 
 
 def _insert_identifier_entries(
@@ -57,8 +62,10 @@ def _insert_identifier_entries(
             raise SubstrateError(
                 f"exact indexing does not support structured sequence member for {field_name!r}"
             )
-        entry = _text_entry(field_name, member, unit_id) if isinstance(member, str) else _typed_entry(field_name, member, unit_id)
-        connection.execute("INSERT INTO exact_index_entries (field_name, value_type, normalized_value, unit_id) VALUES (?, ?, ?, ?)", entry)
+        entry = (_text_entry(SEMANTIC_IDENTIFIER_FIELD_CLASS, field_name, member, unit_id)
+                 if isinstance(member, str)
+                 else _typed_entry(SEMANTIC_IDENTIFIER_FIELD_CLASS, field_name, member, unit_id))
+        connection.execute("INSERT INTO exact_index_entries (field_class, field_name, value_type, normalized_value, unit_id) VALUES (?, ?, ?, ?, ?)", entry)
 
 
 def _decode_storage_value(value_json: str) -> Any:
@@ -81,6 +88,7 @@ def build_exact_index(connection: sqlite3.Connection) -> None:
             DROP TABLE IF EXISTS exact_index_entries;
             CREATE TABLE exact_index_entries (
                 exact_entry_id INTEGER PRIMARY KEY,
+                field_class TEXT NOT NULL,
                 field_name TEXT NOT NULL,
                 value_type TEXT NOT NULL,
                 normalized_value TEXT NOT NULL,
@@ -88,7 +96,7 @@ def build_exact_index(connection: sqlite3.Connection) -> None:
                 FOREIGN KEY (unit_id) REFERENCES canonical_units(unit_id) ON DELETE CASCADE
             );
             CREATE INDEX exact_index_lookup
-                ON exact_index_entries(field_name, value_type, normalized_value, unit_id);
+                ON exact_index_entries(field_class, field_name, value_type, normalized_value, unit_id);
             """
         )
 
@@ -97,9 +105,9 @@ def build_exact_index(connection: sqlite3.Connection) -> None:
         ).fetchall()
         for unit_id, raw_markdown, parsed_text in units:
             connection.executemany(
-                "INSERT INTO exact_index_entries (field_name, value_type, normalized_value, unit_id) VALUES (?, ?, ?, ?)",
-                (_text_entry("raw_markdown", raw_markdown, unit_id),
-                 _text_entry("parsed_text", parsed_text, unit_id)),
+                "INSERT INTO exact_index_entries (field_class, field_name, value_type, normalized_value, unit_id) VALUES (?, ?, ?, ?, ?)",
+                (_text_entry(INTRINSIC_FIELD_CLASS, "raw_markdown", raw_markdown, unit_id),
+                 _text_entry(INTRINSIC_FIELD_CLASS, "parsed_text", parsed_text, unit_id)),
             )
 
             path_components = [value for _, value in connection.execute(
@@ -107,13 +115,13 @@ def build_exact_index(connection: sqlite3.Connection) -> None:
                 (unit_id,),
             ).fetchall()]
             connection.execute(
-                "INSERT INTO exact_index_entries (field_name, value_type, normalized_value, unit_id) VALUES (?, ?, ?, ?)",
-                _path_entry(PATH_HIERARCHY_FIELD, path_components, unit_id),
+                "INSERT INTO exact_index_entries (field_class, field_name, value_type, normalized_value, unit_id) VALUES (?, ?, ?, ?, ?)",
+                _path_entry(SEMANTIC_PATH_FIELD_CLASS, PATH_HIERARCHY_FIELD, path_components, unit_id),
             )
             for component in path_components:
                 connection.execute(
-                    "INSERT INTO exact_index_entries (field_name, value_type, normalized_value, unit_id) VALUES (?, ?, ?, ?)",
-                    _text_entry(PATH_COMPONENT_FIELD, component, unit_id),
+                    "INSERT INTO exact_index_entries (field_class, field_name, value_type, normalized_value, unit_id) VALUES (?, ?, ?, ?, ?)",
+                    _text_entry(SEMANTIC_PATH_FIELD_CLASS, PATH_COMPONENT_FIELD, component, unit_id),
                 )
 
             region_addresses = [row[0] for row in connection.execute(
@@ -125,8 +133,8 @@ def build_exact_index(connection: sqlite3.Connection) -> None:
                 (unit_id,),
             ).fetchall()]
             connection.execute(
-                "INSERT INTO exact_index_entries (field_name, value_type, normalized_value, unit_id) VALUES (?, ?, ?, ?)",
-                _path_entry(REGION_PATH_FIELD, region_addresses, unit_id),
+                "INSERT INTO exact_index_entries (field_class, field_name, value_type, normalized_value, unit_id) VALUES (?, ?, ?, ?, ?)",
+                _path_entry(REGION_FIELD_CLASS, REGION_PATH_FIELD, region_addresses, unit_id),
             )
 
             for field_name, state, value_json in connection.execute(
@@ -136,12 +144,16 @@ def build_exact_index(connection: sqlite3.Connection) -> None:
                 _insert_identifier_entries(connection, unit_id, field_name, state, value_json)
 
 
-def _lookup_key(field_name: str, value: Any) -> tuple[str, str]:
-    if field_name in {REGION_PATH_FIELD, PATH_HIERARCHY_FIELD}:
+def _lookup_key(field_class: str, field_name: str, value: Any) -> tuple[str, str]:
+    if field_class == REGION_FIELD_CLASS and field_name == REGION_PATH_FIELD:
         if not isinstance(value, (list, tuple)) or not all(isinstance(item, str) for item in value):
-            raise TypeError(f"{field_name} exact lookup requires an ordered sequence of strings")
+            raise TypeError("region_path exact lookup requires an ordered sequence of strings")
         return "path", json.dumps([_normalize_text(item) for item in value], ensure_ascii=False, separators=(",", ":"))
-    if field_name == PATH_COMPONENT_FIELD:
+    if field_class == SEMANTIC_PATH_FIELD_CLASS and field_name == PATH_HIERARCHY_FIELD:
+        if not isinstance(value, (list, tuple)) or not all(isinstance(item, str) for item in value):
+            raise TypeError("path_hierarchy exact lookup requires an ordered sequence of strings")
+        return "path", json.dumps([_normalize_text(item) for item in value], ensure_ascii=False, separators=(",", ":"))
+    if field_class == SEMANTIC_PATH_FIELD_CLASS and field_name == PATH_COMPONENT_FIELD:
         if not isinstance(value, str):
             raise TypeError("path_component exact lookup requires text")
         return "text", _normalize_text(value)
@@ -152,14 +164,14 @@ def _lookup_key(field_name: str, value: Any) -> tuple[str, str]:
     return "typed", _json_value(value)
 
 
-def exact_lookup(connection: sqlite3.Connection, field_name: str, value: Any) -> tuple[int, ...]:
+def exact_lookup(connection: sqlite3.Connection, field_class: str, field_name: str, value: Any) -> tuple[int, ...]:
     """Return matching canonical unit IDs, in ascending numeric order."""
 
-    value_type, normalized_value = _lookup_key(field_name, value)
+    value_type, normalized_value = _lookup_key(field_class, field_name, value)
     rows = connection.execute(
         """SELECT DISTINCT unit_id FROM exact_index_entries
-        WHERE field_name = ? AND value_type = ? AND normalized_value = ?
+        WHERE field_class = ? AND field_name = ? AND value_type = ? AND normalized_value = ?
         ORDER BY unit_id""",
-        (field_name, value_type, normalized_value),
+        (field_class, field_name, value_type, normalized_value),
     ).fetchall()
     return tuple(row[0] for row in rows)
