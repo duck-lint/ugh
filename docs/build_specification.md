@@ -128,7 +128,7 @@ complete region path
 semantic path hierarchy/components
 ```
 ### 9.2 Exact-index record shape
-Exact retrieval is a fielded inverted lookup: each enabled exact-search field maps exact field values to the `unit_id`s carrying that value. The exact index is derivative of canonical units and returns `unit_id`s for hydration; it is not another semantic source of truth.
+Exact retrieval is a fielded inverted lookup: each enabled exact-search field maps exact field values to the `unit_id`s carrying that value. The exact index is derivative of canonical units and returns `unit_id`s for hydration; it is not another semantic source of truth. `(field_name, normalized_value) -> unit_ids`.
 ### 9.3 Exact matching normalization
 - Preserve the authored field value exactly as written.
 - Compare text-like values case-insensitively.
@@ -137,6 +137,37 @@ Exact retrieval is a fielded inverted lookup: each enabled exact-search field ma
     - collapse runs of whitespace to a single space.
 - Exact matching is still **field-value equality**, not substring matching.
 - Normalization is used only for lookup/comparison; it does not rewrite the canonical unit.
+#### 9.3.1 Exact comparison preserves canonical value type
+Exact retrieval preserves canonical value domains.
+For text-like values, exact comparison uses the normalization defined in §9.3:
+- Unicode case-folding;
+- trim leading/trailing whitespace;
+- collapse runs of whitespace to one space.
+For non-text scalar values, exact comparison preserves canonical type and value.
+Examples:
+
+    integer 7        ≠ string "7"
+    boolean true     ≠ integer 1
+    date 2026-04-07  ≠ string "2026-04-07"
+#### 9.3.2 Sequence-valued semantic identifiers emit independently searchable members
+When an admitted semantic identifier has an authored sequence value, each authored member is independently exact-searchable under that field. The canonical unit retains the complete authored sequence unchanged.
+Example:
+  unity_level:
+    - model
+    - meta
+may produce derivative exact entries equivalent to:
+  (unity_level, model) → unit_id
+  (unity_level, meta)  → unit_id
+This does not replace, flatten, reorder, or rewrite the canonical inherited identifier value.
+#### 9.3.3 Exact retrieval returns unique canonical units
+A single exact lookup returns each matching `unit_id` at most once. If multiple derivative exact-index entries for the queried field/value refer to the same canonical unit, the lookup result contains that `unit_id` once. Deduplication at this retrieval boundary does not alter canonical authored occurrence multiplicity or canonical relation multiplicity. Exact lookup results are returned in ascending `unit_id` order. Sequence expansion belongs only to derivative retrieval representation. Normalization is comparison-only. Canonical authored values and parsed value types are not rewritten by the exact index.
+#### 9.3.4 Exact region and semantic-path values use authored semantic representation
+Exact retrieval must not expose parser-local or database-local region identifiers as semantic search values. For semantic regions, the exact-searchable value is the complete ordered canonical region path expressed through canonical heading-address values. For authored semantic path topology:
+- the complete ordered vault-relative path hierarchy is exact-searchable as one
+  structured value; and
+- each authored path component is also independently exact-searchable as a path
+  component value.
+Internal region IDs, SQLite row keys, and other implementation identifiers are not semantic exact-search values.
 ### 9.4 Lexical content is searchable
 Parsed unit content is lexically searchable. Admitted frontmatter fields (semantic identifiers) are lexical-searchable—this being driven by the build config. Region text and semantic path components are lexical-searchable as separate fields. Lexical retrieval performs word/phrase matching over their authored text; it does not embed them or infer semantic similarity. Date-valued admitted semantic identifiers are exact-searchable by value. Aliases are alternative authored names resolving to the same canonical target. Aliases are exact- and lexical-searchable without replacing the canonical name. Tags, when admitted by build config, are multi-valued semantic identifiers. Each tag value is separately exact- and lexical-searchable. Tags express authored semantic grouping; they do not create graph relations unless a separate explicit rule later says they do.
 ### 9.5 lexical-index technology and tokenization
