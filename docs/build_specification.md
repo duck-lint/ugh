@@ -26,7 +26,8 @@ Authored content units under regions become semantic units/chunks. Blank separat
 ### 4.2 Preserve raw Markdown and parsed text separately
 Each unit preserves both its authored Markdown and parsed linguistic text.
 ### 4.3 Every unit remains traceable to its source object
-Every semantic unit must remain connected to the object it came from. Hydration during runtime will surface provenance for synthesis. Every semantic unit receives a `unit_id` within the completed ingest, and every retrieval representation uses that `unit_id` to hydrate the canonical semantic unit. Each unit separately retains `source_object_uuid` for object-level provenance. Unit IDs are not required to persist across ingests. 
+Every semantic unit must remain connected to the object it came from. Hydration during runtime will surface provenance for synthesis. Each semantic unit receives a `unit_id` within the completed ingest. `unit_id` is the canonical retrieval identity for semantic-unit targets. Retrieval surfaces may also identify canonical semantic objects or semantic regions where explicitly defined by that surface. Retrieval identities remain typed and resolve to canonical substrate state; internal database row IDs are
+not semantic retrieval identities.
 ### 4.4 Overflow
 - canonical semantic unit is never split because of embedding limits;
 - embedding input is never silently truncated;
@@ -100,7 +101,7 @@ WIKILINK RESOLUTION
 ```
 ## 7. Canonical semantic-unit record
 ### 7.1 The canonical unit owns its semantics
-The semantic unit is the canonical thing. Retrieval surfaces own representations of, and pointers back to, that unit. Retrieval indexes are not additional authoritative copies of the unit's semantic state. Store rich semantic context on the canonical unit. Store only the fields each retrieval surface needs to retrieve a `unit_id`, unless a later explicit decision requires duplication. A canonical unit also retains structured authored embeds already parsed from that unit; persistence must preserve them without resolving or interpreting their targets unless a later explicit rule authorizes that behavior. A canonical unit must be able to retain:
+The semantic unit is the canonical thing. Retrieval surfaces own representations of, and pointers back to, that unit. Retrieval indexes are not additional authoritative copies of the unit's semantic state. Store rich semantic context on the canonical unit. Retrieval surfaces own derivative representations of, and pointers back to, canonical semantic targets. Retrieval indexes are not additional authoritative copies of canonical semantic state. Store only the fields each retrieval surface requires to recover its canonical target identity unless a later explicit decision requires duplication. A canonical unit also retains structured authored embeds already parsed from that unit; persistence must preserve them without resolving or interpreting their targets unless a later explicit rule authorizes that behavior. Runtime hydration by `unit_id` will return the canonical record and its full differing semantic context without relying on duplicated index metadata. A canonical unit must be able to retain:
 ```text
 unit_id
 source_object_uuid
@@ -114,9 +115,8 @@ admitted inherited identifier states
 typed inherited relations
 body linked_to relations
 ```
-Runtime hydration by `unit_id` will return the canonical record and its full differing semantic context without relying on duplicated index metadata.
-### 7.2 Retrieval hits converge on `unit_id` and hydrate
-A hit through any retrieval surface lands on a `unit_id`. Hydration uses that ID to return the canonical semantic unit and all of its context for synthesis.
+### 7.2 Retrieval hits identify canonical targets and hydrate
+A retrieval hit identifies the canonical target represented by that surface. A semantic-unit hit identifies `unit_id`. A semantic-object hit identifies `source_object_uuid`. A semantic-region hit identifies its owning object UUID plus complete canonical region identity. Evidence hydration reconstructs the complete canonical target from the canonical substrate. When the target is a semantic unit, evidence hydration also hydrates its owning canonical semantic object for object-level provenance. When the target is a semantic region, evidence hydration also hydrates its owning canonical semantic object. Hydration does not automatically retrieve sibling units, surrounding units, all units in a containing region, graph neighbors, or other adjacent canonical targets. Such contextual expansion is a separate runtime/control-plane operation.
 ### 7.3 Canonical objects preserve object-level authored state
 A canonical semantic object retains the object-level authored state required to represent the object independently of its semantic units. 
 At minimum preserve:
@@ -249,7 +249,7 @@ The embedding input is the unit's parsed intrinsic text and nothing else. It exc
 - raw Markdown syntax.
 Visible link text remains in parsed linguistic text.
 ### 10.3 The vector index is not a semantic source of truth
-Canonical semantic metadata belongs to the semantic unit, not to duplicated vector metadata. Hydration will retrieve the canonical unit through `unit_id` that contains all the rest of the semantics.
+Canonical semantic metadata belongs to the canonical semantic object or semantic unit represented by the vector record, not to duplicated vector metadata. A vector record retains only the target identity and derivative embedding provenance required to recover its canonical target. Hydration follows the record's `target_kind` and `target_identity`.
 ### 10.4 Build-time and query-time embeddings must be compatible
 Stored corpus vectors and conversation-time query vectors must use a compatible embedding model and version. This dependency must be driven chronologically (ingest comes before conversation, therefore conversation runtime will be dependent on verification against build embedding model, not the otherway around).
 ### 10.5 Vector query input
@@ -407,6 +407,6 @@ The `07_Tuesday.md` fixture must prove all of the following.
 - Every unit inherits admitted frontmatter as semantic identifiers.
 - Each semantic unit produces one or more vector records derived only from its parsed intrinsic text.
 - Vector inputs exclude UUID, path, region, frontmatter (semantic identifiers), relations, and raw Markdown syntax.
-- Every retrieval representation returns a `unit_id` that hydrates the full canonical unit.
+- Every retrieval representation returns a typed canonical retrieval identity that hydrates its complete canonical target. Semantic-unit evidence also identifies and hydrates its owning canonical object for object-level provenance.
 - No invalid build is published as a completed capability catalog.
 - The semantic capability catalog exposes every represented semantic and relation type and accurately states surface availability.
