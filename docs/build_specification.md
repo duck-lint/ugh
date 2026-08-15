@@ -240,6 +240,7 @@ VectorRecord {
 ```
 A vector hit identifies the canonical object or semantic unit represented by the winning vector record. A semantic-object hit hydrates that canonical object. A semantic-unit hit hydrates the complete canonical unit and identifies its owning canonical object for object-level provenance. Hydration does not automatically retrieve sibling units, surrounding units, all units in the containing region, or graph neighbors. Such contextual expansion is a separate later runtime/control-plane operation.
 A semantic object containing zero semantic units produces one vector representation derived only from its canonical authored object name. If the object contains one or more semantic units, no object-name fallback vector is produced; vector representation instead derives from eligible unit parsed_text.
+For zero-unit object vector fallback, the canonical authored object name is the authored source-path basename with its final `.md` suffix removed, using the same canonical object-name representation already used for object addressing and resolution. Aliases, tags, titles, semantic identifiers, path components, and relation metadata are not appended or substituted.
 ### 10.2 Vector input is parsed intrinsic unit text only
 The embedding input is the unit's parsed intrinsic text and nothing else. It excludes:
 - object UUID;
