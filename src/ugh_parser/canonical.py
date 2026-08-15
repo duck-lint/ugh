@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .materialize import MaterializedCorpus, MaterializedUnit, RelationCandidate
+from .materialize import MaterializedCorpus, MaterializedObject, MaterializedUnit, RelationCandidate
 from .parser import Embed, FrontmatterField, HeadingRegion
 from .resolve import RegionTarget, ResolutionResult, ResolvedObjectRelation, ResolvedRelation
 from .vault import VaultParseResult
@@ -169,6 +169,7 @@ def canonicalize_ingest(result: ResolutionResult) -> CompletedIngest:
         for region in object_regions:
             region_references[(source_uuid, region.reference.region_path)] = region.reference
 
+    _verify_object_relation_provenance(materialized, result.resolved_object_relations)
     object_relations_by_uuid: dict[str, list[CanonicalObjectRelation]] = {}
     for relation in result.resolved_object_relations:
         object_relations_by_uuid.setdefault(relation.source_object_uuid, []).append(
@@ -232,6 +233,56 @@ def canonicalize_ingest(result: ResolutionResult) -> CompletedIngest:
         parsed,
         materialized,
         result,
+    )
+
+
+def _verify_object_relation_provenance(
+    materialized: MaterializedCorpus,
+    resolved_relations: tuple[ResolvedObjectRelation, ...],
+) -> None:
+    """Require resolver output to preserve each authored object occurrence in order."""
+
+    expected_by_uuid = {obj.source_object_uuid: obj for obj in materialized.objects}
+    actual_by_uuid: dict[str, list[ResolvedObjectRelation]] = {
+        source_uuid: [] for source_uuid in expected_by_uuid
+    }
+    for relation in resolved_relations:
+        actual_by_uuid.setdefault(relation.source_object_uuid, []).append(relation)
+
+    if set(expected_by_uuid) != set(actual_by_uuid):
+        raise CanonicalizationError("resolved object relation sources do not match materialized objects")
+
+    for source_uuid, materialized_object in expected_by_uuid.items():
+        actual = actual_by_uuid[source_uuid]
+        expected = materialized_object.relations
+        if len(actual) != len(expected):
+            raise CanonicalizationError(
+                f"resolved object relation count does not match authored occurrences for {source_uuid!r}"
+            )
+        for authored, resolved in zip(expected, actual):
+            if not _same_object_authored_occurrence(materialized_object, authored, resolved):
+                raise CanonicalizationError(
+                    f"resolved object relation provenance does not match authored occurrence for {source_uuid!r}"
+                )
+
+
+def _same_object_authored_occurrence(
+    materialized_object: MaterializedObject,
+    authored_relation: RelationCandidate,
+    resolved_relation: ResolvedObjectRelation,
+) -> bool:
+    """Compare only authored provenance; destination fields remain resolver output."""
+
+    return (
+        resolved_relation.source_object_uuid == materialized_object.source_object_uuid
+        and resolved_relation.source_path == materialized_object.authored_path
+        and resolved_relation.relation_name == authored_relation.relation_name
+        and resolved_relation.origin == authored_relation.origin
+        and resolved_relation.source_field == authored_relation.source_field
+        and resolved_relation.raw == authored_relation.raw
+        and resolved_relation.authored_target == authored_relation.target
+        and resolved_relation.authored_label == authored_relation.label
+        and resolved_relation.authored_region_fragment == authored_relation.target_region_fragment
     )
 
 

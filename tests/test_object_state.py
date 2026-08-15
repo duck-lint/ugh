@@ -2,9 +2,11 @@ import sqlite3
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from dataclasses import replace
 
 from ugh_parser import (
     BuildConfig,
+    CanonicalizationError,
     canonicalize_ingest,
     hydrate_object,
     materialize_context,
@@ -23,7 +25,7 @@ class CanonicalObjectStateTests(unittest.TestCase):
     def _build(self):
         config = BuildConfig(
             "test", "uuid", (),
-            ("score", "tags", "related", "other", "blank", "missing"),
+            ("score", "tags", "related", "other", "duplicate", "blank", "missing"),
         )
         directory = TemporaryDirectory()
         root = Path(directory.name)
@@ -35,6 +37,9 @@ related:
   - "[[target#Inner|first]]"
   - "[[target#Inner|second]]"
 other: "[[target#Inner|other-field]]"
+duplicate:
+  - "[[target]]"
+  - "[[target]]"
 blank:
 ---
 """)
@@ -59,13 +64,16 @@ target unit
                 ("tags", "present_value", ["one", "one", "two"]),
                 ("related", "present_value", ["[[target#Inner|first]]", "[[target#Inner|second]]"]),
                 ("other", "present_value", "[[target#Inner|other-field]]"),
+                ("duplicate", "present_value", ["[[target]]", "[[target]]"]),
                 ("blank", "present_blank", None),
                 ("missing", "absent", None),
             ])
             self.assertEqual(len(source.regions), 0)
-            self.assertEqual(len(source.relations), 3)
-            self.assertEqual([relation.source_field for relation in source.relations], ["related", "related", "other"])
-            self.assertTrue(all(relation.target_region is not None for relation in source.relations))
+            self.assertEqual(len(source.relations), 5)
+            self.assertEqual([relation.source_field for relation in source.relations], ["related", "related", "other", "duplicate", "duplicate"])
+            self.assertEqual(source.relations[3], source.relations[4])
+            self.assertTrue(all(relation.target_region is not None for relation in source.relations[:3]))
+            self.assertTrue(all(relation.target_region is None for relation in source.relations[3:]))
             self.assertTrue(all(not hasattr(relation, "source_local_order") for relation in source.relations))
 
             database = Path(directory.name) / "substrate.sqlite3"
@@ -79,12 +87,45 @@ target unit
             ))
             with self.assertRaises(KeyError):
                 hydrate_object(reopened, "unknown")
-            self.assertEqual(reopened.execute("SELECT COUNT(*) FROM object_identifiers").fetchone()[0], 12)
-            self.assertEqual(reopened.execute("SELECT COUNT(*) FROM object_relations").fetchone()[0], 3)
+            self.assertEqual(reopened.execute("SELECT COUNT(*) FROM object_identifiers").fetchone()[0], 14)
+            self.assertEqual(reopened.execute("SELECT COUNT(*) FROM object_relations").fetchone()[0], 5)
             self.assertEqual(reopened.execute("PRAGMA foreign_key_check").fetchall(), [])
             reopened.close()
         finally:
             directory.cleanup()
+
+    def _assert_canonicalization_rejects(self, mutate):
+        directory, completed = self._build()
+        try:
+            malformed = mutate(completed.resolution_result)
+            with self.assertRaises(CanonicalizationError):
+                canonicalize_ingest(malformed)
+        finally:
+            directory.cleanup()
+
+    def test_object_relation_omission_is_rejected(self):
+        self._assert_canonicalization_rejects(lambda result: replace(
+            result, resolved_object_relations=result.resolved_object_relations[:-1]
+        ))
+
+    def test_object_relation_extra_occurrence_is_rejected(self):
+        self._assert_canonicalization_rejects(lambda result: replace(
+            result, resolved_object_relations=result.resolved_object_relations + (result.resolved_object_relations[-1],)
+        ))
+
+    def test_distinct_object_relation_reordering_is_rejected(self):
+        def reorder(result):
+            relations = list(result.resolved_object_relations)
+            relations[0], relations[1] = relations[1], relations[0]
+            return replace(result, resolved_object_relations=tuple(relations))
+        self._assert_canonicalization_rejects(reorder)
+
+    def test_object_relation_wrong_source_provenance_is_rejected(self):
+        def wrong_source(result):
+            relations = list(result.resolved_object_relations)
+            relations[0] = replace(relations[0], source_object_uuid="target", source_path="target.md")
+            return replace(result, resolved_object_relations=tuple(relations))
+        self._assert_canonicalization_rejects(wrong_source)
 
     def test_object_relational_foreign_keys_reject_invalid_provenance(self):
         directory, completed = self._build()
