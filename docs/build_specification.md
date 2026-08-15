@@ -26,18 +26,22 @@ Authored content units under regions become semantic units/chunks. Blank separat
 ### 4.2 Preserve raw Markdown and parsed text separately
 Each unit preserves both its authored Markdown and parsed linguistic text.
 ### 4.3 Every unit remains traceable to its source object
-Every semantic unit must remain connected to the object it came from. Hydration during runtime will surface provenance for synthesis. Each semantic unit receives a `unit_id` within the completed ingest. `unit_id` is the canonical retrieval identity for semantic-unit targets. Retrieval surfaces may also identify canonical semantic objects or semantic regions where explicitly defined by that surface. Retrieval identities remain typed and resolve to canonical substrate state; internal database row IDs are
-not semantic retrieval identities.
+Every semantic unit must remain connected to the object it came from. Hydration during runtime will surface provenance for synthesis. Each semantic unit receives a `unit_id` within the completed ingest. `unit_id` is the canonical retrieval identity for semantic-unit targets. Each unit separately retains `source_object_uuid` for object-level provenance. Retrieval surfaces may also identify canonical semantic objects or semantic regions where explicitly defined by that surface. Retrieval identities remain typed and resolve to canonical substrate state; internal database row IDs are not semantic retrieval identities. Unit IDs are not required to persist across ingests.
 ### 4.4 Overflow
-- canonical semantic unit is never split because of embedding limits;
+- a canonical semantic unit is never split because of embedding limits;
 - embedding input is never silently truncated;
-- every character/token of parsed_text must be represented by at least
-  one vector segment;
-- segmentation prefers natural textual boundaries;
-- adjacent segments may overlap to preserve boundary context;
-- all vector segments point to the same unit_id;
-- hydration always returns the complete canonical unit, not merely
-  the matching vector segment.
+- every character/token of vector-eligible parsed_text must be represented by  at least one vector segment;
+- if the complete vector input fits the pinned embedding model's input capacity, it produces exactly one segment;
+- if it does not fit, segmentation greedily takes the largest fitting prefix;
+- segmentation prefers, in order:
+    1. the latest newline boundary that fits;
+    2. the latest whitespace boundary that fits;
+    3. the embedding model's token boundary when no earlier authored textual
+       boundary can produce a fitting segment;
+- segments do not overlap;
+- segmentation does not normalize, rewrite, summarize, or otherwise alter the represented text;
+- all segments retain the same typed canonical target identity;
+- hydration always returns the complete canonical target, never merely the winning vector segment.
 ### 4.5 Semantic Model Sample
 path: `C:\Users\madis\Desktop\kháos\LAYER-1 PILLARS\PILLAR 2-DYNAMIC COHERENCE\JOURNAL\2026\2026-04\07_Tuesday.md`
 - Lines 1-26: YAML **frontmatter** with 3 **wikilink** connections—I'd expect the semantics of those **wikilink** connections to be carried into the **units** along with the rest of the **frontmatter identifiers**
@@ -100,8 +104,8 @@ WIKILINK RESOLUTION
    02_Tuesday in different folders remain completely distinct.
 ```
 ## 7. Canonical semantic-unit record
-### 7.1 The canonical unit owns its semantics
-The semantic unit is the canonical thing. Retrieval surfaces own representations of, and pointers back to, that unit. Retrieval indexes are not additional authoritative copies of the unit's semantic state. Store rich semantic context on the canonical unit. Retrieval surfaces own derivative representations of, and pointers back to, canonical semantic targets. Retrieval indexes are not additional authoritative copies of canonical semantic state. Store only the fields each retrieval surface requires to recover its canonical target identity unless a later explicit decision requires duplication. A canonical unit also retains structured authored embeds already parsed from that unit; persistence must preserve them without resolving or interpreting their targets unless a later explicit rule authorizes that behavior. Runtime hydration by `unit_id` will return the canonical record and its full differing semantic context without relying on duplicated index metadata. A canonical unit must be able to retain:
+### 7.1 The canonical unit owns its semantic-unit state
+A semantic unit is canonical semantic state, not a retrieval-index record. Retrieval surfaces own derivative representations of, and pointers back to, canonical semantic targets. Retrieval indexes are not additional authoritative copies of canonical semantic state. Store rich semantic-unit context on the canonical unit. Store only the fields each retrieval surface requires to recover its canonical target identity unless a later explicit decision requires duplication. A canonical unit also retains structured authored embeds already parsed from that unit; persistence must preserve them without resolving or interpreting their targets unless a later explicit rule authorizes that behavior. Runtime hydration by `unit_id` will return the canonical record and its full differing semantic context without relying on duplicated index metadata. A canonical unit must be able to retain:
 ```text
 unit_id
 source_object_uuid
@@ -362,7 +366,9 @@ Validation is aggregate rather than fail-fast. Before rejecting an ingest, the b
 - Ollama
 - qwen3-embedding:0.6b
 - pin the exact model identity/digest used by the build
-- if `parsed_text` fits within the embedding input limit, one vector record
+- Vector input is either:
+  - eligible semantic-unit parsed_text; or
+  - canonical authored object name for a zero-unit semantic object.
 - document embedding input is parsed intrinsic unit text only
 - 1024-dimensional float vectors
 - L2-normalized vectors
@@ -372,7 +378,11 @@ Validation is aggregate rather than fail-fast. Before rejecting an ingest, the b
 - one matrix row per vector record/segment. If it exceeds the limit:
 	- multiple vector-segment records
 	- all → same unit_id
-- SQLite stores the mapping between vector row and unit_id
+- SQLite stores the mapping between each vector row and its typed canonical target:
+  - target_kind
+  - target_identity
+  - segment_ordinal
+- Multiple segments of one represented target retain the same target_kind and target_identity.
 - exhaustive cosine search over the complete matrix
 - no ANN/vector database
 #### Generated capability catalog
@@ -405,7 +415,10 @@ The `07_Tuesday.md` fixture must prove all of the following.
 - Frontmatter-derived and body-derived relations to the same target remain distinct denoted through path type either carrying frontmatter semantics or body default `linked_to`.
 - Object and region wikilinks resolve or the ingest fails with a repair report.
 - Every unit inherits admitted frontmatter as semantic identifiers.
-- Each semantic unit produces one or more vector records derived only from its parsed intrinsic text.
+- Every vector-eligible semantic unit produces one or more vector records derived only from its parsed intrinsic text.
+- A semantic unit whose parsed_text is empty or whitespace-only produces no vector record.
+- A semantic object containing zero semantic units produces one semantic-object vector representation derived only from its canonical authored object name.
+- An object containing one or more semantic units produces no object-name fallback vector.
 - Vector inputs exclude UUID, path, region, frontmatter (semantic identifiers), relations, and raw Markdown syntax.
 - Every retrieval representation returns a typed canonical retrieval identity that hydrates its complete canonical target. Semantic-unit evidence also identifies and hydrates its owning canonical object for object-level provenance.
 - No invalid build is published as a completed capability catalog.
