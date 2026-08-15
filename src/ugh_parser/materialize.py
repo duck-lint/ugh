@@ -34,6 +34,17 @@ class RelationCandidate:
 
 
 @dataclass(frozen=True)
+class MaterializedObject:
+    """Authored object state retained independently of semantic units."""
+
+    source_object_uuid: str
+    authored_path: str
+    path_hierarchy: tuple[str, ...]
+    admitted_identifiers: tuple[FrontmatterField, ...]
+    relations: tuple[RelationCandidate, ...]
+
+
+@dataclass(frozen=True)
 class MaterializedUnit:
     """A parser unit with inherited object context and relation candidates."""
 
@@ -53,6 +64,7 @@ class MaterializedUnit:
 class MaterializedCorpus:
     parsed_corpus: VaultParseResult
     units: tuple[MaterializedUnit, ...]
+    objects: tuple[MaterializedObject, ...] = ()
 
     @property
     def build_config(self):
@@ -103,6 +115,7 @@ def materialize_context(result: VaultParseResult) -> MaterializedCorpus:
     build_config = result.build_config
 
     materialized: list[MaterializedUnit] = []
+    materialized_objects: list[MaterializedObject] = []
     for note in result.notes:
         source_uuid = note.semantic_object.uuid
         if source_uuid is None:
@@ -124,6 +137,16 @@ def materialize_context(result: VaultParseResult) -> MaterializedCorpus:
                         source_field=field.name,
                     )
                 )
+
+        materialized_objects.append(
+            MaterializedObject(
+                source_uuid,
+                note.semantic_object.authored_path,
+                note.semantic_object.path_hierarchy,
+                note.semantic_object.admitted_fields,
+                tuple(frontmatter_relations),
+            )
+        )
 
         for unit in note.units:
             body_relations = tuple(
@@ -152,4 +175,4 @@ def materialize_context(result: VaultParseResult) -> MaterializedCorpus:
                     embeds=unit.embeds,
                 )
             )
-    return MaterializedCorpus(result, tuple(materialized))
+    return MaterializedCorpus(result, tuple(materialized), tuple(materialized_objects))

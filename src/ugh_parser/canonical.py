@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .materialize import MaterializedCorpus, MaterializedUnit, RelationCandidate
+from .materialize import MaterializedCorpus, MaterializedObject, MaterializedUnit, RelationCandidate
 from .parser import Embed, FrontmatterField, HeadingRegion
-from .resolve import RegionTarget, ResolutionResult, ResolvedRelation
+from .resolve import RegionTarget, ResolutionResult, ResolvedObjectRelation, ResolvedRelation
 from .vault import VaultParseResult
 
 
@@ -41,7 +41,26 @@ class CanonicalObject:
     source_object_uuid: str
     source_path: str
     path_hierarchy: tuple[str, ...]
+    admitted_identifiers: tuple[FrontmatterField, ...]
+    relations: tuple[CanonicalObjectRelation, ...]
     regions: tuple[CanonicalRegion, ...]
+
+
+@dataclass(frozen=True)
+class CanonicalObjectRelation:
+    """One authored frontmatter relation occurrence owned by an object."""
+
+    relation_name: str
+    origin: str
+    source_field: str | None
+    raw: str
+    authored_target: str
+    authored_label: str
+    authored_region_fragment: str | None
+    source_object_uuid: str
+    source_path: str
+    target_object_uuid: str
+    target_region: CanonicalRegionReference | None
 
 
 @dataclass(frozen=True)
@@ -141,12 +160,32 @@ def canonicalize_ingest(result: ResolutionResult) -> CompletedIngest:
                 source_uuid,
                 note.semantic_object.authored_path,
                 note.semantic_object.path_hierarchy,
+                note.semantic_object.admitted_fields,
+                (),
                 object_regions,
             )
         )
         canonical_regions.extend(object_regions)
         for region in object_regions:
             region_references[(source_uuid, region.reference.region_path)] = region.reference
+
+    _verify_object_relation_provenance(materialized, result.resolved_object_relations)
+    object_relations_by_uuid: dict[str, list[CanonicalObjectRelation]] = {}
+    for relation in result.resolved_object_relations:
+        object_relations_by_uuid.setdefault(relation.source_object_uuid, []).append(
+            _canonical_object_relation(relation, region_references)
+        )
+    canonical_objects = [
+        CanonicalObject(
+            obj.source_object_uuid,
+            obj.source_path,
+            obj.path_hierarchy,
+            obj.admitted_identifiers,
+            tuple(object_relations_by_uuid.get(obj.source_object_uuid, ())),
+            obj.regions,
+        )
+        for obj in canonical_objects
+    ]
 
     resolved_relations = iter(result.resolved_relations)
     canonical_units: list[CanonicalUnit] = []
@@ -197,6 +236,56 @@ def canonicalize_ingest(result: ResolutionResult) -> CompletedIngest:
     )
 
 
+def _verify_object_relation_provenance(
+    materialized: MaterializedCorpus,
+    resolved_relations: tuple[ResolvedObjectRelation, ...],
+) -> None:
+    """Require resolver output to preserve each authored object occurrence in order."""
+
+    expected_by_uuid = {obj.source_object_uuid: obj for obj in materialized.objects}
+    actual_by_uuid: dict[str, list[ResolvedObjectRelation]] = {
+        source_uuid: [] for source_uuid in expected_by_uuid
+    }
+    for relation in resolved_relations:
+        actual_by_uuid.setdefault(relation.source_object_uuid, []).append(relation)
+
+    if set(expected_by_uuid) != set(actual_by_uuid):
+        raise CanonicalizationError("resolved object relation sources do not match materialized objects")
+
+    for source_uuid, materialized_object in expected_by_uuid.items():
+        actual = actual_by_uuid[source_uuid]
+        expected = materialized_object.relations
+        if len(actual) != len(expected):
+            raise CanonicalizationError(
+                f"resolved object relation count does not match authored occurrences for {source_uuid!r}"
+            )
+        for authored, resolved in zip(expected, actual):
+            if not _same_object_authored_occurrence(materialized_object, authored, resolved):
+                raise CanonicalizationError(
+                    f"resolved object relation provenance does not match authored occurrence for {source_uuid!r}"
+                )
+
+
+def _same_object_authored_occurrence(
+    materialized_object: MaterializedObject,
+    authored_relation: RelationCandidate,
+    resolved_relation: ResolvedObjectRelation,
+) -> bool:
+    """Compare only authored provenance; destination fields remain resolver output."""
+
+    return (
+        resolved_relation.source_object_uuid == materialized_object.source_object_uuid
+        and resolved_relation.source_path == materialized_object.authored_path
+        and resolved_relation.relation_name == authored_relation.relation_name
+        and resolved_relation.origin == authored_relation.origin
+        and resolved_relation.source_field == authored_relation.source_field
+        and resolved_relation.raw == authored_relation.raw
+        and resolved_relation.authored_target == authored_relation.target
+        and resolved_relation.authored_label == authored_relation.label
+        and resolved_relation.authored_region_fragment == authored_relation.target_region_fragment
+    )
+
+
 def _same_authored_occurrence(
     materialized_unit: MaterializedUnit,
     authored_relation: RelationCandidate,
@@ -238,6 +327,30 @@ def _canonical_relation(
         relation.source_object_uuid,
         relation.source_path,
         relation.local_order,
+        relation.target_object_uuid,
+        target_region,
+    )
+
+
+def _canonical_object_relation(
+    relation: ResolvedObjectRelation,
+    region_references: dict[tuple[str, tuple[str, ...]], CanonicalRegionReference],
+) -> CanonicalObjectRelation:
+    target_region = (
+        _region_reference(region_references, relation.target_region)
+        if relation.target_region is not None
+        else None
+    )
+    return CanonicalObjectRelation(
+        relation.relation_name,
+        relation.origin,
+        relation.source_field,
+        relation.raw,
+        relation.authored_target,
+        relation.authored_label,
+        relation.authored_region_fragment,
+        relation.source_object_uuid,
+        relation.source_path,
         relation.target_object_uuid,
         target_region,
     )
