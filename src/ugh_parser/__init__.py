@@ -19,6 +19,7 @@ from .resolve import ResolutionError, ResolutionFailure, ResolutionResult, Resol
 from .canonical import CanonicalObject, CanonicalRegion, CanonicalRegionReference, CanonicalRelation, CanonicalUnit, CanonicalizationError, CompletedIngest, canonicalize_ingest
 from .substrate import SubstrateError, foreign_key_check, hydrate_unit, write_completed_ingest
 from .exact import exact_lookup, build_exact_index
+from .lexical import LexicalHit, build_lexical_index, lexical_integrity_check, lexical_lookup
 
 __all__ = [
     "FrontmatterField",
@@ -62,4 +63,8 @@ __all__ = [
     "foreign_key_check",
     "build_exact_index",
     "exact_lookup",
+    "LexicalHit",
+    "build_lexical_index",
+    "lexical_lookup",
+    "lexical_integrity_check",
 ]
