@@ -38,7 +38,10 @@ class GraphProjectionTests(unittest.TestCase):
         self._write(root, "A/Marx, Karl - Capital.md", """---
 uuid: marx
 aliases: [Capital]
-tags: [book, theory]
+tags:
+  - book
+  - theory
+  - "[[Target]]"
 book_read_today:
   - "[[Target]]"
   - "[[Target]]"
@@ -97,7 +100,9 @@ book_read_today: "[[Target]]"
                 )
             }
             represented = {row[0] for row in connection.execute("SELECT DISTINCT relation_name FROM object_relations")}
-            self.assertEqual(registered, represented)
+            self.assertEqual(registered, represented - {"tags"})
+            source = next(obj for obj in completed.objects if obj.source_object_uuid == "marx")
+            self.assertEqual([relation.relation_name for relation in source.relations].count("tags"), 1)
             self.assertNotIn("aliases", registered)
             self.assertNotIn("tags", registered)
             self.assertNotIn("other", registered)

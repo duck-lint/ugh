@@ -209,7 +209,8 @@ def _register_relations(connection: sqlite3.Connection) -> None:
         [(STRUCTURAL, name) for name in _STRUCTURAL_RELATIONS] + [_BODY_RELATION],
     )
     fields = connection.execute(
-        "SELECT DISTINCT relation_name FROM object_relations ORDER BY relation_name"
+        """SELECT DISTINCT relation_name FROM object_relations
+        WHERE relation_name <> 'tags' ORDER BY relation_name"""
     ).fetchall()
     connection.executemany(
         "INSERT INTO graph_relation_types VALUES (?, ?)",
@@ -305,7 +306,8 @@ def _target_handle(target_object_uuid: str, target_path_json: str | None) -> Gra
 def _add_authored_edges(connection: sqlite3.Connection) -> None:
     for row in connection.execute(
         """SELECT source_object_uuid, relation_name, authored_target, target_object_uuid,
-        target_region_path_json FROM object_relations ORDER BY relation_row_id"""
+        target_region_path_json FROM object_relations
+        WHERE relation_name <> 'tags' ORDER BY relation_row_id"""
     ):
         source_uuid, relation_name, _, target_uuid, target_path_json = row
         _add_edge(connection, _object_handle(source_uuid), _target_handle(target_uuid, target_path_json),
