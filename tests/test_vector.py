@@ -42,7 +42,8 @@ class ProviderDouble:
 class NonMonotonicProvider(ProviderDouble):
     def embed(self, text, *, truncate=False):
         self.calls.append((text, truncate))
-        if text == "abcdef":
+        # Deliberately violate monotonicity: abc is rejected while abcde fits.
+        if text in {"abcdef", "abc", "ab", "a"}:
             raise EmbeddingProviderError("provider rejected this candidate", capacity_exceeded=True)
         return super().embed(text, truncate=truncate)
 
@@ -86,8 +87,27 @@ class VectorProjectionTests(unittest.TestCase):
 
     def test_fallback_checks_descending_boundaries_without_monotonicity(self):
         provider = NonMonotonicProvider(capacity=5)
+        with self.assertRaises(EmbeddingProviderError):
+            provider.embed("abc", truncate=False)
+        provider.embed("abcde", truncate=False)
         segments = segment_and_embed(provider, "abcdef")
         self.assertEqual([text for text, _ in segments], ["abcde", "f"])
+
+        # The former binary-search assumption tests abc, then discards every
+        # longer boundary after that failure; it cannot find this fit.
+        binary_probe = NonMonotonicProvider(capacity=5)
+        low, high = 1, 5
+        accepted = None
+        while low <= high:
+            middle = (low + high) // 2
+            try:
+                binary_probe.embed("abcdef"[:middle], truncate=False)
+            except EmbeddingProviderError:
+                high = middle - 1
+            else:
+                accepted = middle
+                low = middle + 1
+        self.assertIsNone(accepted)
 
     def test_build_persists_float32_vectors_and_reopens(self):
         connection = self._connection()
@@ -118,11 +138,73 @@ class VectorProjectionTests(unittest.TestCase):
             connection.execute("UPDATE vector_segments SET matrix_row = 2 WHERE matrix_row = 1")
             with self.assertRaises(VectorError):
                 validate_vector_index(connection, matrix_path)
-
             connection.execute("UPDATE vector_segments SET matrix_row = 1 WHERE matrix_row = 2")
             connection.execute("UPDATE vector_segments SET unit_id = 2 WHERE target_kind = 'semantic_unit'")
             with self.assertRaises(VectorError):
                 validate_vector_index(connection, matrix_path)
+
+    def test_semantic_object_identity_mismatch_is_rejected(self):
+        connection = self._connection()
+        with TemporaryDirectory() as directory:
+            matrix_path = Path(directory) / "vectors.npy"
+            build_vector_index(connection, matrix_path, ProviderDouble(capacity=100))
+            connection.execute(
+                "UPDATE vector_segments SET source_object_uuid = 'empty-object' WHERE target_kind = 'semantic_object'"
+            )
+            with self.assertRaisesRegex(VectorError, "semantic-object"):
+                validate_vector_index(connection, matrix_path)
+
+    def test_impossible_typed_target_columns_are_rejected(self):
+        connection = self._connection()
+        with TemporaryDirectory() as directory:
+            matrix_path = Path(directory) / "vectors.npy"
+            build_vector_index(connection, matrix_path, ProviderDouble(capacity=100))
+            self._replace_vector_segments_without_checks(
+                connection, source_object_uuid="unit-object", unit_id=1, rewrite_object=False
+            )
+            with self.assertRaisesRegex(VectorError, "semantic-unit"):
+                validate_vector_index(connection, matrix_path)
+
+    def test_foreign_key_violation_is_rejected(self):
+        connection = self._connection()
+        with TemporaryDirectory() as directory:
+            matrix_path = Path(directory) / "vectors.npy"
+            build_vector_index(connection, matrix_path, ProviderDouble(capacity=100))
+            self._replace_vector_segments_without_checks(connection, source_object_uuid="missing-object")
+            with self.assertRaisesRegex(VectorError, "foreign-key"):
+                validate_vector_index(connection, matrix_path)
+
+    @staticmethod
+    def _replace_vector_segments_without_checks(connection, *, source_object_uuid, unit_id=None, rewrite_object=True):
+        rows = connection.execute(
+            "SELECT matrix_row, target_kind, target_identity_json, segment_ordinal, segment_text, unit_id, source_object_uuid FROM vector_segments"
+        ).fetchall()
+        connection.execute("PRAGMA foreign_keys = OFF")
+        connection.execute("DROP TABLE vector_segments")
+        connection.execute(
+            """CREATE TABLE vector_segments (
+                matrix_row INTEGER PRIMARY KEY,
+                target_kind TEXT NOT NULL,
+                target_identity_json TEXT NOT NULL,
+                segment_ordinal INTEGER NOT NULL,
+                segment_text TEXT NOT NULL,
+                unit_id INTEGER,
+                source_object_uuid TEXT,
+                UNIQUE (target_kind, target_identity_json, segment_ordinal),
+                FOREIGN KEY (unit_id) REFERENCES canonical_units(unit_id),
+                FOREIGN KEY (source_object_uuid) REFERENCES canonical_objects(source_object_uuid)
+            )"""
+        )
+        rewritten = []
+        for row in rows:
+            if row[1] == "semantic_object" and rewrite_object:
+                row = (*row[:5], row[5], source_object_uuid)
+            elif row[1] == "semantic_unit" and unit_id is not None:
+                row = (*row[:5], unit_id, source_object_uuid)
+            rewritten.append(row)
+        connection.executemany("INSERT INTO vector_segments VALUES (?, ?, ?, ?, ?, ?, ?)", rewritten)
+        connection.commit()
+        connection.execute("PRAGMA foreign_keys = ON")
 
     def test_nonproduction_provider_cannot_publish_completed_state(self):
         connection = self._connection()
