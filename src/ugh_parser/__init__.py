@@ -18,6 +18,7 @@ from .materialize import MaterializedCorpus, MaterializedUnit, MaterializationEr
 from .resolve import ResolutionError, ResolutionFailure, ResolutionResult, ResolvedRelation, ObjectTarget, RegionTarget, resolve_relations
 from .canonical import CanonicalObject, CanonicalRegion, CanonicalRegionReference, CanonicalRelation, CanonicalUnit, CanonicalizationError, CompletedIngest, canonicalize_ingest
 from .substrate import SubstrateError, foreign_key_check, hydrate_unit, write_completed_ingest
+from .exact import exact_lookup, build_exact_index
 
 __all__ = [
     "FrontmatterField",
@@ -59,4 +60,6 @@ __all__ = [
     "write_completed_ingest",
     "hydrate_unit",
     "foreign_key_check",
+    "build_exact_index",
+    "exact_lookup",
 ]
