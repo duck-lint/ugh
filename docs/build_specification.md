@@ -128,7 +128,34 @@ complete region path
 semantic path hierarchy/components
 ```
 ### 9.2 Exact-index record shape
-Exact retrieval is a fielded inverted lookup: each enabled exact-search field maps exact field values to the `unit_id`s carrying that value. The exact index is derivative of canonical units and returns `unit_id`s for hydration; it is not another semantic source of truth. `(field_name, normalized_value) -> unit_ids`.
+Exact retrieval is a fielded inverted lookup: each enabled exact-search field maps exact field values to the `unit_id`s carrying that value. The exact index is derivative of canonical units and returns `unit_id`s for hydration; it is not another semantic source of truth. `(field_class, field_name, normalized_value) -> unit_ids`.
+#### 9.2.1 Exact fields are namespaced by semantic field class
+Exact-searchable fields are identified by both semantic field class and field name.
+Conceptually:
+  (field_class, field_name, normalized_value) -> unit_ids
+Field classes keep intrinsically different semantic dimensions separately addressable even when they have the same textual field name.
+At minimum distinguish:
+  intrinsic
+      raw_markdown
+      parsed_text
+
+  semantic_identifier
+      <admitted field name>
+
+  region
+      region_path
+
+  semantic_path
+      path_hierarchy
+      path_component
+An admitted semantic identifier may have the same textual name as an intrinsic or structural exact field without collision.
+Example:
+  intrinsic / parsed_text
+and:
+  semantic_identifier / parsed_text
+are distinct exact-search dimensions.
+Do not reserve authored semantic-identifier names merely because an intrinsic, region, semantic-path, database, or implementation field uses the same text.
+Database table names, surrogate keys, parser-local identifiers, and other implementation details do not create semantic field classes.
 ### 9.3 Exact matching normalization
 - Preserve the authored field value exactly as written.
 - Compare text-like values case-insensitively.
